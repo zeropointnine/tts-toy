@@ -1,0 +1,23 @@
+{
+    "orpheus_llm": {
+        "url": "http://127.0.0.1:8080/v1/completions",
+        "request_dict": {
+            "model": "orpheus",
+            "temperature": 0.5,
+            "top_p": 0.9,
+            "repeat_penalty": 1.1
+        }
+    },
+
+    "chatbot_llm": {
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "api_key": "",
+        "api_key_environment_variable": "OPEN_ROUTER_API_KEY",
+        "request_dict": {
+            "model": "google/gemini-2.0-flash-lite-001",
+            "temperature": 1.0
+        }
+    }
+}
+
+
