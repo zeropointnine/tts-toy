@@ -1,6 +1,6 @@
 # Description
 
-https://github.com/user-attachments/assets/db7c5d9c-dc06-4f8d-b0b9-5cb840b6f4cd
+https://github.com/user-attachments/assets/89c3b255-7a5f-4a6f-af40-0f67910a0b32
 
 Interactive console app that plays text-to-speech audio using [Orpheus-3B](https://huggingface.co/canopylabs/orpheus-3b-0.1-ft). Can be used to "vocalize" your favorite chatbot's text responses. 
 
@@ -50,9 +50,8 @@ Consider choosing a fast-responding remote LLM for optimal "interactivity feel" 
 
     python app.py
 
-# Todo / ideas
+# Todo
 
-- Stream the LLM text response to allow for faster audio response time while in chat mode, especially when using slower LLM's or for long responses generally.
+- Stream the LLM text response to allow for faster audio response time while in chat mode, especially when using slower LLM's or for longer responses generally. [IN PROGRESS]
 - Web service layer for audio generation?
-- Browser front-end with WebRTC?
 - Voice cloning?
