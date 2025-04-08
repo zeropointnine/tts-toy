@@ -1,9 +1,7 @@
 import threading
 import asyncio
-import time
 import queue
-from typing import cast 
-from typing import NamedTuple
+from typing import cast
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.layout.containers import HSplit, Window, VSplit
@@ -12,20 +10,19 @@ from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
-from ansi import Ansi
 from app_util import AppUtil
 from constants import Constants
 from l import L
 from color import Color
 from llm_request_config import LlmRequestConfig
-from text_chunker import chunk_out_text
+from llm_streamer_manager import LlmStreamerManager
+from text_segmenter import TextSegmenter
 from orpheus_gen import OrpheusGen
 from text_massager import TextMassager
 from app_types import UiMessage, UiMessageType
 from util import Util
 from constants_long import ConstantsLong
 from audio_streamer import AudioStreamer
-from llm_requester import LlmRequester
 from hex_color_processor import HexColorProcessor
 from word_wrap_control import WordWrapControl
 
@@ -34,6 +31,7 @@ class App:
     Rem, requires an LLM server (eg, llama-server or LM Studio) with the Orpheus model loaded. 
     And then update `config.json` with the appropriate url (eg, http://127.0.0.1:8080).
     """
+
     def __init__(self):
 
         AppUtil.init_logging()
@@ -48,35 +46,40 @@ class App:
             print("\n" + error_message)
             exit(1)                  
 
-        self.llm_requester = LlmRequester()
-        self.llm_requester.set_system_prompt(ConstantsLong.SYSTEM_PROMPT)
-
         self.stop_audio_event = threading.Event()
         self.ui_message_queue = queue.Queue[UiMessage]()
-
+        
         self.audio_streamer = AudioStreamer(
             stop_event=self.stop_audio_event, 
             ui_message_queue=self.ui_message_queue,
             orpheus_request_config=self.orpheus_request_config
         ) 
 
+        self.voice_code = "leah"
         self.is_chat_mode = bool(self.chat_request_config) and not bool(warning_message)
-        self.current_voice = "leah"
-        self.last_audio: LastAudio = LastAudio(False, "")
 
-        self.init_ui()
+        self.init_ui() 
 
         # ---
+
+        self.llm_streamer_manager = LlmStreamerManager(
+            config=cast(LlmRequestConfig, self.chat_request_config), 
+            system_prompt=ConstantsLong.SYSTEM_PROMPT, 
+            ui_message_queue=self.ui_message_queue,
+            audio_streamer=self.audio_streamer
+        )
+
         self.print_stroke_flag = False
-        self.print_menu_to_content()
+        self.print_menu()
         self.print_stroke_flag: bool = True
 
         if warning_message:
             AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, Color.WARNING + warning_message)
 
-        AppUtil.ping_orpheus_server(self.orpheus_request_config, self.ui_message_queue)
-
-        AppUtil.import_decoder_with_feedback(self.ui_message_queue)
+        def go():
+            AppUtil.ping_orpheus_server_with_feedback(self.orpheus_request_config, self.ui_message_queue)
+            AppUtil.import_decoder_with_feedback(self.ui_message_queue)
+        Util.run_in_thread(go, 0.5) # allows app to startup faster
 
     def init_ui(self) -> None:
 
@@ -88,8 +91,6 @@ class App:
         self.audio_status_control = BufferControl(self.audio_status_buffer, focusable=False, input_processors=[HexColorProcessor()])
 
         self.content_control = WordWrapControl()
-        self.content_window = Window(content=self.content_control, wrap_lines=False, style="class:content")
-
         self.log_control = WordWrapControl(width_offset=-1)
 
         self.gen_status_buffer = Buffer()
@@ -111,7 +112,7 @@ class App:
             
             # Main area 
             VSplit([
-                self.content_window,
+                Window(content=self.content_control, wrap_lines=False, style="class:content"),
                 VerticalLine(),
                 Window(content=self.log_control, width=50, wrap_lines=True, style="class:info")
             ], padding=1),
@@ -135,7 +136,7 @@ class App:
             "title": f"{Color.hex(Color.DARK)}",
             "audio_status": f"{Color.hex(Color.LIGHT)}",
 
-            "content": f"{Color.hex(Color.SPEECH)}",
+            "content": f"{Color.hex(Color.ASSISTANT)}",
             "info": f"{Color.hex(Color.DARK)}",
             
             "gen_status": f"{Color.hex(Color.DARK)}",
@@ -158,8 +159,9 @@ class App:
 
         @kb.add("enter", eager=True) # note eager
         async def _(_): 
-            user_input = self.input_buffer.text.strip()
-            await self.process_input(user_input)
+            user_input = self.input_buffer.text
+            self.input_buffer.reset()
+            await self.process_user_input(user_input)
 
     async def run(self):
 
@@ -170,176 +172,151 @@ class App:
         except Exception as e:
             AppUtil.send_ui_message(
                 self.ui_message_queue, UiMessageType.LOG, 
-                f"{Color.ERROR}Unexpected error. Could be bad. Consider restart.\n{Color.ERROR}{e}"
+                f"{Color.ERROR}Unexpected error. Could be bad. Consider restart.\n{e}"
             )
         finally:
             pass
 
-    async def process_input(self, user_input: str) -> None:
+    async def process_user_input(self, user_input: str) -> None:
 
         user_input = user_input.strip()
         if not user_input:
             return
-
-        # Clear textfield
-        self.input_buffer.reset()
-
+        
         # Process command, if necessary
         is_command = user_input.startswith("!") and user_input[1:].isalpha()
         if is_command:
             command = user_input[1:]
-            self.process_command(command)
+            await self.process_command(command)
             return
         
         if self.is_chat_mode:
-            self.print_content(f"{Color.INPUT}{user_input}")
-            await self.do_chat_request(user_input)
+            await self.do_chat_request_plus(user_input)
         else:
-            self.print_and_play_direct_audio_message(user_input)
+            await self.do_direct_mode_message(user_input)
 
-    def process_command(self, command: str) -> None:
+    async def process_command(self, command: str) -> None: 
         """
-        Processes a "command" and prints feedback in content area
+        Processes a "command" and prints feedback in content area. 
         """
         was_chat_mode = self.is_chat_mode
-        was_voice = self.current_voice
+        was_voice_code = self.voice_code
+        
+        content_feedback = ""
+        log_feedback = ""
 
         match command:
-            case value if value in OrpheusGen.AVAILABLE_VOICES:
-                self.current_voice = command
-                feedback = f"Changed voice to {self.current_voice}"
+
+            case value if value in VOICE_CODES:
+                self.voice_code = command
+                if self.voice_code == "random":
+                    log_feedback = "Changed voice to: Random voice per generated audio segment"
+                else:
+                    log_feedback = f"Changed voice to: {self.voice_code}"
             
             case "clear":
                 if self.is_chat_mode:
-                    self.llm_requester.clear_messages(preserve_system_prompt=True)
-                    feedback = "Cleared chat"
+                    self.llm_streamer_manager.init_history()
+                    content_feedback = "Cleared chat history"
                     self.print_stroke_flag = True
+                    await self.stop_all()
                 else:
-                    feedback = "Not in \"chat mode\n"
+                    content_feedback = "Not in \"chat mode\n"
 
             case value if value in ["stop", "s"]:
-                # TODO don't if no audio playing
-                self.stop_audio()
-                feedback =  "Stopping audio"
+                if False:
+                    # TODO don't if no audio playing
+                    content_feedback =  "Nothing to stop"
+                else:
+                    await self.stop_all()
+                    log_feedback =  "Stopped audio "
 
             case value if value in ["direct", "d"]:
                 if self.is_chat_mode:
+                    await self.stop_all()
                     self.is_chat_mode = False
-                    feedback = "Switching to \"direct input mode\""
+                    content_feedback = "Switched to \"direct input mode\""
                     self.print_stroke_flag = True
                 else:
-                    feedback = "Already in \"direct input mode\""
+                    content_feedback = "Already in \"direct input mode\""
 
             case value if value in ["chat", "c"]:
                 if not self.is_chat_mode:
                     if not self.chat_request_config:
-                        feedback = "Chat mode is disabled (Edit \"config.json\")."
+                        content_feedback = "Can't. Chat mode is disabled (Edit \"config.json\")."
                     else:
                         self.is_chat_mode = True
-                        self.llm_requester.clear_messages(preserve_system_prompt=True)
-                        feedback = f"Switching to \"chat mode\" ({self.chat_request_config.url})"
+                        content_feedback = f"Switched to \"chat mode\" ({self.chat_request_config.url})"
                         self.print_stroke_flag = True
                 else:
-                    feedback = "Already in chat mode"
-
-            case value if value in ["regen", "r"]:
-                if not self.last_audio.input_text:
-                    feedback = "Nothing to regenerate yet"
-                else:
-                    feedback = ""
-                    if self.last_audio.is_chat_mode:
-                        self.print_and_play_assistant_audio_message(self.last_audio.input_text)
-                    else:
-                        self.print_and_play_direct_audio_message(self.last_audio.input_text)
+                    content_feedback = "Already in chat mode"
 
             case value if value in ["help", "menu"]:
-                feedback = ""
-                self.print_menu_to_content()
+                self.print_menu()
 
             case "quit":
-                exit(0)
+                self.application.exit()
 
             case _:
-                feedback = f"No such command: !{command}"
+                content_feedback = f"No such command: !{command}"
 
-        if feedback:    
-            self.print_content(f"{Color.add_letter(Color.FEEDBACK, "i")}{feedback}")
+        if content_feedback:    
+            self.print_to_content(f"{Color.with_letter(Color.FEEDBACK, "i")}{content_feedback}")
+        if log_feedback:    
+            self.print_to_log(f"{log_feedback}")
 
-        title_dirty = self.is_chat_mode != was_chat_mode or self.current_voice != was_voice
+        title_dirty = self.is_chat_mode != was_chat_mode or self.voice_code != was_voice_code
         if title_dirty:
             self.update_title()
 
-    async def do_chat_request(self, user_input: str) -> None:
+    async def do_chat_request_plus(self, user_input: str) -> None:
         """
-        Make LLM request, get response, print to content area, and queue audio job
+        Starts an LLM streaming request, leading to audio output
         """
-        AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, "Sending request to LLM")
-
-        start_time = time.time()
-        text, error_message = await self.llm_requester.do_request(user_input, cast(LlmRequestConfig, self.chat_request_config))
-        if error_message:
-            AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.ERROR}{error_message}")
+        if not self.chat_request_config:
+            AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.ERROR}Chat config missing! Edit \"config.json\" and fix.")
             return
 
-        elapsed = time.time() - start_time
-        AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"Got response in {elapsed:.1f}s")
+        # Stop audio playback and various queues (business rule)
+        await self.stop_all()
 
-        self.print_and_play_assistant_audio_message(text)
+        print_text = TextMassager.massage_user_input_for_print(user_input)
+        self.print_to_content(print_text) 
 
-    def print_and_play_assistant_audio_message(self, input_text: str) -> None:
+        # Add the initial block for the assistant's response
+        placeholder_text = f"{Color.with_letter(Color.DARKEST, "i")}Sending request..."
+        self.print_to_content(placeholder_text)
+
+        # Make the streaming request
+        self.llm_streamer_manager.make_request(user_input, self.voice_code, False)
         
-        self.last_audio = LastAudio(True, input_text)
+    async def do_direct_mode_message(self, user_input: str) -> None: 
+        user_input = TextMassager.transform_direct_mode_input_dev(user_input)
+        
+        print_text = TextMassager.massage_user_input_for_print(user_input)
+        self.print_to_content(print_text) 
 
-        print_text = TextMassager.massage_assistant_message_for_print(input_text)
-        self.print_content(f"{Color.SPEECH}{print_text}")
+        # Note, we do not massage the text for direct mode (because "direct mode")
+        text_chunks = TextSegmenter.segment_full_message(user_input)
+        self.audio_streamer.add_to_text_queue(text_chunks, self.voice_code)
 
-        # If audio is playing, stop it rather than simply adding new audio to end of queue
-        # TODO conditional is not exhaustive but good enough for now
-        if self.audio_streamer.audio_stream_queue.qsize() > 0:
-            self.stop_audio()
-            # TODO need extra logic for a transitory "is-stopping-audio" state
-            time.sleep(1.0) 
+    # ---
 
-        # Queue audio generation
-        orpheus_text = TextMassager.massage_assistant_message_for_orpheus(input_text)
-        text_chunks = chunk_out_text(orpheus_text)
-        self.audio_streamer.add_to_text_queue(text_chunks, self.current_voice)
-
-    def print_and_play_direct_audio_message(self, input_text: str) -> None:
-
-        self.last_audio = LastAudio(False, input_text)
-        self.print_content(f"{Color.INPUT}{input_text}")
-
-        text = TextMassager.transform_direct_mode_user_input(input_text)
-        text_chunks = chunk_out_text(text)
-        self.audio_streamer.add_to_text_queue(text_chunks, self.current_voice)
-
-    def print_content(self, message: str) -> None:        
+    def print_to_content(self, message: str) -> None:        
         if self.print_stroke_flag:
             self.print_stroke_flag = False
-            self.print_content(f"{Color.DARKEST}[STROKE]")
+            self.print_to_content(f"{Color.DARKEST}[STROKE]")
 
         self.content_control.add_block(message)
         self.application.invalidate()
 
-    def print_log(self, message: str) -> None:
+    def print_to_log(self, message: str) -> None:
         self.log_control.add_block(message)
         self.application.invalidate()
 
-    def print_menu_to_content(self) -> None:
-        s = ConstantsLong.MENU_TEXT
-        s = ConstantsLong.MENU_TEXT.rstrip() + "\n\n"
-        if self.is_chat_mode:
-            assert(self.chat_request_config)
-            s += f"{Color.FEEDBACK}You are in \"chat mode\".\n"
-            s += f"{Color.FEEDBACK}The LLM at {self.chat_request_config.url} will talk to you."
-        else:
-            s += f"{Color.FEEDBACK}You are in \"direct input mode\". Speech will be generated from your input."
-        self.print_content(s)
-
-    def print_gen_status(self, info: tuple) -> None:
+    def update_gen_status(self, info: tuple) -> None:
         """
-        Expects a tuple with prompt, current "duration", and time elapsed
+        :prompt info: Tuple with (prompt, current "duration", time elapsed)
         """
         text, length, elapsed = info
         multi = f"({(length / elapsed):.1f}x)" if elapsed > 0 else ""
@@ -347,12 +324,13 @@ class App:
         if text:
             s = f"Generating audio\n"
             s += Color.MEDIUM + Util.truncate_string(text, 50 - 1, ellipsize=True) + "\n"
-            s += f"length: {length:.2f}s elapsed: {elapsed:.2f}s {multi}"
+            elapsed_string = AppUtil.elapsed_string(elapsed)
+            s += f"length: {length:.2f}s elapsed: {elapsed_string} {multi}"
         else:
             s = ""
         self.gen_status_buffer.text = s # temp
 
-    def print_audio_status(self, info: str) -> None:
+    def update_audio_status(self, info: str) -> None:
         s = f"buffer {info}" if info else "buffer 0s"
         s = " " * (50 - 1 - len(s)) + s
         if not info:
@@ -363,59 +341,84 @@ class App:
     def update_title(self) -> None:
         s = f"{Constants.APP_NAME} {Constants.VERSION} "
         s += "(chat mode)" if self.is_chat_mode else "(direct input mode)"
-        s += f" (voice: {self.current_voice})"
+        s += f" (voice: {self.voice_code})"
         self.title_buffer.text = s
 
+    def print_menu(self) -> None:
+        s = ConstantsLong.MENU_TEXT
+        s = ConstantsLong.MENU_TEXT.rstrip() + "\n\n"
+        if self.is_chat_mode:
+            assert(self.chat_request_config)
+            s += f"{Color.with_letter(Color.FEEDBACK, "i")}You are in \"chat mode\" The LLM will talk to you.\n"
+            s += f"{Color.FEEDBACK_DARK}({self.chat_request_config.url})"
+        else:
+            s += f"{Color.FEEDBACK}You are in \"direct input mode\". Speech will be generated from your input."
+        self.print_to_content(s)
+
     def print_ui_message(self, ui_message: UiMessage) -> None:
-        """ Prints something in the UI based on ui_message's type """
+        """ 
+        Prints to or updates one of the UI widgets or whatever based on ui_message's type 
+        """
         value = ui_message.value
-        match ui_message.type:            
-            case UiMessageType.CONTENT:
-                self.print_content(value)
-            case UiMessageType.LOG:
-                self.print_log(value)
-            case UiMessageType.GEN_STATUS:
-                self.print_gen_status(value)
-            case UiMessageType.AUDIO_STATUS:
-                self.print_audio_status(value)
+        try:
+            match ui_message.type:
+                case UiMessageType.CONTENT_ADD:
+                    self.print_to_content(value)
+                case UiMessageType.CONTENT_REPLACE_BLOCK:
+                    self.content_control.replace_last_block(value)
+                case UiMessageType.CONTENT_APPEND_BLOCK:
+                    self.content_control.append_to_last_block(value)
+                case UiMessageType.LOG:
+                    self.print_to_log(value)
+                case UiMessageType.GEN_STATUS:
+                    self.update_gen_status(value)
+                case UiMessageType.AUDIO_STATUS:
+                    self.update_audio_status(value)
+        except Exception as e:
+            L.e(f"Error printing UI message: {ui_message} {e}")
 
     def print_status(self, text: str) -> None:
 
         self.audio_status_buffer.reset()
         self.audio_status_buffer.insert_text(text)
 
-    def stop_audio(self) -> None:
-        # Event will be cleared by the worker thread once acknowledged
+    async def stop_all(self) -> None:
+        """
+        Stops all gracefully.
+        """
+
+        # Stop event will be cleared by the worker thread once acknowledged
+        # TODO  may cause problems while in transitory "is-stopping-audio" state
+        #       may need more logic (or just sleeping for half a second)
         self.stop_audio_event.set()
+
         self.audio_streamer.clear_queues()
+        AppUtil.clear_queue(self.ui_message_queue)
+        
+        self.llm_streamer_manager.abort()
 
     async def ui_message_handler_loop(self):
         """
-        Polls the ui message queue. Updates the UI accordingly.
-        """        
+        Polls the ui message queue and updates the UI accordingly
+        """
         while True:
-            message_processed = False  # Initialize flag outside try
             try:
-                ui_message = self.ui_message_queue.get_nowait()
+                ui_message = self.ui_message_queue.get(block=False) 
                 self.print_ui_message(ui_message)
                 self.ui_message_queue.task_done()
-                message_processed = True
             except queue.Empty:
-                pass 
+                await asyncio.sleep(0.1) 
             except Exception as e:
-                # Log the error and avoid crashing the handler loop
-                self.print_log(f"Error handling message: {e}{Ansi.RESET}") # This probably fails but...
-                # Wait longer after an error
-                await asyncio.sleep(1) 
-
-            if not message_processed:
-                await asyncio.sleep(0.1)
-
+                L.e(f"Error in ui_message_handler_loop: {e}")
+                try:
+                    self.print_to_log(f"{Color.ERROR}Error handling UI message: {e}")
+                except Exception:
+                     pass
+                await asyncio.sleep(1) # longer wait here
 # ---
 
-class LastAudio(NamedTuple):
-    is_chat_mode: bool
-    input_text: str
+VOICE_CODES = OrpheusGen.AVAILABLE_VOICES.copy()
+VOICE_CODES.append("random")
 
 # ---
 

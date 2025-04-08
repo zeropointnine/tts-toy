@@ -66,10 +66,12 @@ class ConstantsLong:
         !chat or !c - switch to "chat mode" 
         !direct or !d - switch to "direct input mode"
 
+        voices:
+            !tara, !leah, !jess, !leo, !dan, !mia, !zac, !zoe, 
+            !random
+
         !stop or !s - stop audio output
         !regen or !r - regenerate the last audio message
-
-        !tara, !leah, !jess, !leo, !dan, !mia, !zac, !zoe - set text-to-speech voice
 
         !clear - clear chat history 
 

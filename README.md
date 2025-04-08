@@ -1,12 +1,12 @@
-# Description
-
 https://github.com/user-attachments/assets/89c3b255-7a5f-4a6f-af40-0f67910a0b32
+
+# Description
 
 Interactive console app that plays text-to-speech audio using [Orpheus-3B](https://huggingface.co/canopylabs/orpheus-3b-0.1-ft). Can be used to "vocalize" your favorite chatbot's text responses. 
 
-When in "chat mode", uses a system prompt to elicit Orpheus-specific vocalizations like \<laugh\>, \<sigh\>, \<gasp\>, etc.
+When in "chat mode", uses a system prompt to elicit the model's special vocalizations like \<laugh\>, \<sigh\>, \<gasp\>, etc.
 
-Requires setting up Orpheus model to be served locally (see below).
+Requires setting up Orpheus model to be served locally (see below). 
 
 Core decoding logic adapted from [orpheus-tts-local](https://github.com/isaiahbjork/orpheus-tts-local) by [isaiahbjork](https://github.com/isaiahbjork).
 
@@ -40,18 +40,37 @@ Example command using llama.cpp (LM Studio also works):
 
 ## 3. Edit `config.json` 
 
-In the `orpheus_llm` object, update `url` to that of your LLM server's endpoint (If using llama-server, that would normally be `http://http://127.0.0.1:8080/v1/completions`).
+**Required:**
 
-To be able to use app in "chatbot mode" (where the app will do TTS using the chatbot's responses), update the properties of the `chatbot_llm` object: The `url` should be a `chat/completions`-compatible endpoint (eg, OpenRouter service). Populate either `api_key` or `api_key_environment_variable` as needed. Lastly, the inner `request_dict` object can be populated with properties which will get merged into the service request's JSON data (eg, "model", "temperature", etc). 
+Edit `orpheus_llm.url` to that of your LLM server's endpoint.
 
-Consider choosing a fast-responding remote LLM for optimal "interactivity feel" (For example, using Gemini Flash Lite, on my system I can get audio playback from the chat assistant within 1.5 seconds of submitting the prompt, which feels pretty good).
+For llama-server, that would normally be http://127.0.0.1:8080/v1/completions.
+
+**Required for LLM chat functionality:**
+
+Update the properties of the `chatbot_llm` object
+
+The `url` should be a `chat/completions`-compatible endpoint (eg, OpenRouter service). 
+
+Populate either `api_key` or `api_key_environment_variable` as needed. 
+
+Lastly, the inner `request_dict` object can be populated with properties which will get merged into the service request's JSON data (eg, "model", "temperature", etc). 
 
 ## 4. Run
 
     python app.py
 
+Reminder here that Orpheus model inference + 'SNAC' decoding is not a lightweight task. Anecdotal datapoint: On my dev system (Ryzen 7700 + 3080Ti), audio generation is only about 1.5x faster than real-time.
+
+# Updates
+
+2025-04-08
+
+- Chat response now streams, allowing for audio generation to begin after the first several words are received. 
+
 # Todo
 
-- Stream the LLM text response to allow for faster audio response time while in chat mode, especially when using slower LLM's or for longer responses generally. [IN PROGRESS]
+- Highlight audio segment currently being spoken in realtime?
+- Save generated audio output to disk? ...
 - Web service layer for audio generation?
 - Voice cloning?

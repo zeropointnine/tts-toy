@@ -25,7 +25,7 @@ class WordWrapControl(BufferControl):
     # override
     def create_content(self, width: int, height: int, preview_search: bool = False) -> UIContent:
         """ 
-        Gets called whenever Application is invalidated.
+        Gets called whenever pt.Application is invalidated.
         Content gets re-regenerated when width changes.
         """
         self._model.set_width(width + self.width_offset) # TODO bug re: "-1"
@@ -40,6 +40,16 @@ class WordWrapControl(BufferControl):
     def add_block(self, block: str) -> None:
         self._model.add_block(block)
         self._update_buffer()
+
+    def append_to_last_block(self, text_to_append: str) -> None:
+        """Appends text to the last block added to the model."""
+        self._model.append_to_last_block(text_to_append)
+        self._update_buffer() # Trigger UI update
+
+    def replace_last_block(self, new_block_text: str) -> None:
+        """Replaces the content of the last block added to the model."""
+        self._model.replace_last_block(new_block_text)
+        self._update_buffer() # Trigger UI update
 
     def clear(self) -> None:
         self._model.clear()
@@ -75,6 +85,29 @@ class TextModel:
     def add_block(self, block: str) -> None:
         self.blocks.append(block)        
         self.add_lines_from_block(block)
+        self.is_dirty = True # Mark dirty after adding a block
+
+    def append_to_last_block(self, text_to_append: str) -> None:
+        """Appends text to the last block and marks the model dirty."""
+        if not self.blocks:
+            # If there are no blocks, treat this as adding the first block
+            self.add_block(text_to_append)
+        else:
+            # Append to the existing last block string
+            self.blocks[-1] += text_to_append
+            # Mark as dirty to trigger regeneration on next get_value/update
+            self.is_dirty = True
+
+    def replace_last_block(self, new_block_text: str) -> None:
+        """Replaces the last block and marks the model dirty."""
+        if not self.blocks:
+            # If there are no blocks, treat this as adding the first block
+            self.add_block(new_block_text)
+        else:
+            # Replace the content of the last block
+            self.blocks[-1] = new_block_text
+            # Mark as dirty to trigger regeneration on next get_value/update
+            self.is_dirty = True
 
     def add_lines_from_block(self, block: str) -> None:
 

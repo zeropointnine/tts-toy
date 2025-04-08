@@ -7,7 +7,9 @@ class UiMessage(NamedTuple):
     value: Any
 
 class UiMessageType(Enum):
-    CONTENT = auto()
+    CONTENT_ADD = auto()
+    CONTENT_REPLACE_BLOCK = auto()
+    CONTENT_APPEND_BLOCK = auto()
     LOG = auto()
     GEN_STATUS = auto()
     AUDIO_STATUS = auto()

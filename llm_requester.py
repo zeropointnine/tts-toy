@@ -4,10 +4,8 @@ from llm_request_config import LlmRequestConfig
 
 class LlmRequester:
     """
-    Makes OpenAI "completions" API calls asynchronously.
+    Makes non-streaming OpenAI "completions" API calls
     Maintains chat history state.
-
-    Rem, "v1/chat/competions" is different from the older "v1/completions".
     """
 
     def __init__(self):
@@ -16,7 +14,7 @@ class LlmRequester:
 
     def set_system_prompt(self, s: str) -> None:
         """
-        Sets or replaces the system prompt (must be the first message).
+        Sets or replaces the system prompt (must be first message).
         """
         if not self._messages:
             self._messages.append(("system", s))
@@ -36,6 +34,22 @@ class LlmRequester:
              self._messages = [self._messages[0]]
         else:
              self._messages = []
+
+    def _add_user_message(self, s: str) -> None:
+        """ Adds a user message to the list. """
+        if self._messages and self._messages[-1][0] == "user":
+            print("Warning: Adding user message after user message.")
+        self._messages.append(("user", s))
+
+    def _add_assistant_message(self, s: str) -> None:
+        """ Adds an assistant message to the list. """
+        if not self._messages:
+            print("Warning: First message is an assistant message.")
+        elif self._messages[-1][0] == "assistant":
+            print("Warning: Adding assistant message after assistant message.")
+        self._messages.append(("assistant", s))
+
+    # ---
 
     async def do_request(self, user_message: str, config: LlmRequestConfig, dont_add_to_history: bool=False) -> tuple[str, str]:
         """
@@ -131,18 +145,4 @@ class LlmRequester:
              return "", f"Error parsing response structure: {e}"
         except Exception as e: # Catch other unexpected errors during processing
             return "", f"Unexpected error processing response: {e}"
-
-    def _add_user_message(self, s: str) -> None:
-        """ Adds a user message to the list. """
-        if self._messages and self._messages[-1][0] == "user":
-            print("Warning: Adding user message after user message.")
-        self._messages.append(("user", s))
-
-    def _add_assistant_message(self, s: str) -> None:
-        """ Adds an assistant message to the list. """
-        if not self._messages:
-            print("Warning: First message is an assistant message.")
-        elif self._messages[-1][0] == "assistant":
-            print("Warning: Adding assistant message after assistant message.")
-        self._messages.append(("assistant", s))
 

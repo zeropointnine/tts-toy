@@ -1,10 +1,43 @@
+retroactively delete now-ignored file
+
+
+after, "stop", log audio segment info should say "(stopped)" at end of message
+
+doing command while printing out text is a no no :/
+
+need time-to-first-audio printout
+
+[2] text segmenter 
+    test new version where you feed it an entire text block kind of thing
+    then use it for direct mode too, and then kill old version
+
+[2.5] add scrollbar
+
+put LLM on main machine and benchmark times and gpu and cpu usage again
+
+bug - printing feedback during streaming 
+
+figure out something like 'resubmit last user input'
+
+add 'time-to-first-audio' log message
+
+add "has run app at least once" file marker
+
+in direct mode, if input starts with "leah:", don't prepend current voice. maybe also chat mode as well.
+
 ------------------------------------
 TODO
 ------------------------------------
 
-style titlebar
+re-add replay
 
-make named tuple for replay variable
+streaming response
+    
+    on first streaming text response, do log message, "Got first text" kind of thing
+
+    move new logic out of app, or smth 
+
+style titlebar
 
 make public
 
@@ -24,7 +57,7 @@ two independent voice settings maybe, one for user prompt and one for assistant 
     what was the last thing i asked                                                                          
     <chuckle> you just asked me what the last thing you asked was. 
 
-[2] after returning to idling computer after several hours, app had no sound output (2x). buffer underflow at least one of those times.
+[2] audio no longer outputs after buffer underflow 
 
 [3] text chunker - add second pass where it combines short sentences that will fit. probably does not enhance quality.
 
@@ -71,9 +104,9 @@ performance notes:
     snac torch device = cuda NO FASTER than cpu (3080ti) (?!)
     speed is NO SLOWER using q4 vs q8 (llama-server, 3080ti, cuda) (?!)
 
-model:
-    leah voice quite a lot more stable than default tara
+    "model": "openai/chatgpt-4o-latest",
 
-LLM notes
-    "model": "google/gemini-2.0-flash-lite-001",
-    "model": "deepseek/deepseek-chat-v3-0324",
+
+
+
+Examples: You can find many models here, including variations of Llama, Flan-T5, and others. Search for models with active "Deploy" or "Use in Space" options.

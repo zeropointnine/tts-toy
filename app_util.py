@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import queue
+import socket
 import tempfile
 from typing import Any
 
@@ -12,7 +13,6 @@ from l import L
 from llm_request_config import LlmRequestConfig
 from shared import Shared
 from util import Util
-from constants_long import ConstantsLong
 
 class AppUtil:
     
@@ -39,6 +39,10 @@ class AppUtil:
         """
 
         file_name = "config.json"
+        if socket.gethostname() == "mini" and True:
+            L.i("Loading *DEV* config")
+            file_name = "_other/config_dev.json"
+
 
         error_prefix = f"There is a problem with the configuration file, \"{file_name}\"."
         error_prefix += "\nPlease edit it to resolve the error and try again:\n\n"
@@ -94,15 +98,16 @@ class AppUtil:
         )
 
     @staticmethod
-    def ping_orpheus_server(orpheus_request_config: LlmRequestConfig, ui_message_queue: queue.Queue) -> None:
+    def ping_orpheus_server_with_feedback(orpheus_request_config: LlmRequestConfig, ui_message_queue: queue.Queue) -> None:
         from orpheus_gen import OrpheusGen
 
         error_message = OrpheusGen.ping(orpheus_request_config)        
         if error_message:
             AppUtil.send_ui_message(ui_message_queue, UiMessageType.LOG, Color.ERROR + error_message)
+
             content_error_message = f"{Color.ERROR}Orpheus server at {orpheus_request_config.url} may not be online.\n"
             content_error_message += f"{Color.ERROR}Check config.json file."
-            AppUtil.send_ui_message(ui_message_queue, UiMessageType.CONTENT, content_error_message)
+            AppUtil.send_ui_message(ui_message_queue, UiMessageType.CONTENT_ADD, content_error_message)
         else:
             AppUtil.send_ui_message(
                 ui_message_queue, UiMessageType.LOG, f"Orpheus server is online\n{orpheus_request_config.url}")
@@ -114,7 +119,6 @@ class AppUtil:
             return
         def go():
             AppUtil.send_ui_message(ui_message_queue, UiMessageType.LOG, "Initializing torch")
-            from decoder import convert_to_audio
             from decoder import snac_device
             Shared.has_imported_decoder = True
             AppUtil.send_ui_message(ui_message_queue, UiMessageType.LOG, f"'SNAC' device: {snac_device}")
@@ -133,3 +137,26 @@ class AppUtil:
         except queue.Full:
             print("Couldn't add ui message to queue:", ui_message)
             pass
+
+    @staticmethod
+    def clear_queue(q: queue.Queue):
+        """Safely empties a given queue."""
+        cleared_count = 0
+        while not q.empty():
+            try:
+                q.get_nowait()
+                q.task_done() # Mark task as done if applicable (harmless for non-task queues)
+                cleared_count += 1
+            except queue.Empty:
+                break # Queue is empty
+            except Exception as e:
+                L.e("Couldn't clear queue item: {q} | {item} | {e}")
+                break # Stop clearing on error
+
+    @staticmethod
+    def elapsed_string(seconds: float) -> str:
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        minutes = seconds // 60
+        seconds = seconds % 60
+        return f"{minutes}m{seconds:.1f}s"

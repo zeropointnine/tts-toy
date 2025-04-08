@@ -11,7 +11,7 @@ from app_types import UiMessageType
 from app_util import AppUtil
 from color import Color
 from llm_request_config import LlmRequestConfig
-from shared import Shared
+from text_massager import TextMassager
 
 class OrpheusGen:
     """
@@ -25,8 +25,7 @@ class OrpheusGen:
     AVAILABLE_VOICES = ["tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe"]
     DEFAULT_VOICE = "tara"
 
-    def __init__(self, stop_event: threading.Event, ui_message_queue: queue.Queue):
-        
+    def __init__(self, stop_event: threading.Event, ui_message_queue: queue.Queue):        
         self.stop_event = stop_event
         self.ui_message_queue = ui_message_queue
 
@@ -59,7 +58,7 @@ class OrpheusGen:
             # Let's keep it simple first. If blocking occurs, use loop.run_in_executor.
             for token in sync_token_gen:
                 yield token
-                await asyncio.sleep(0) # Allow other tasks to run
+                await asyncio.sleep(0) # "0" allows other tasks to run
 
         async def async_producer(
             stop_event: threading.Event | None, 
@@ -125,7 +124,8 @@ class OrpheusGen:
                     audio_length = num_samples / SAMPLE_RATE
                     elapsed = time.time() - start_time
                     multi = audio_length / elapsed
-                    s = f"{Color.MEDIUM}{prompt}\n"
+                    massaged_prompt = TextMassager.massage_tts_text_segment_for_log(prompt)
+                    s = f"{Color.MEDIUM}{massaged_prompt}\n"
                     s += f"length: {audio_length:.2f}s elapsed: {elapsed:.2f}s ({multi:.1f}x)"
                     AppUtil.send_ui_message(self.ui_message_queue,  UiMessageType.LOG, s)
 
@@ -286,7 +286,7 @@ class OrpheusGen:
 
         if voice not in OrpheusGen.AVAILABLE_VOICES:
             voice = OrpheusGen.DEFAULT_VOICE
-            
+
         # Format similar to how engine_class.py does it with special tokens
         result = f"{voice}: {prompt}"
         
@@ -363,11 +363,11 @@ class OrpheusGen:
     @staticmethod
     def ping(request_config: LlmRequestConfig) -> str:
         """
-        Makes a simple request to infer if server is online / 'healthy'.
-        Returns user-facing error message on fail, else empty string.
+        Pings server
+        Returns error message on fail, else empty string
         """
         json_data = request_config.request_dict.copy()
-        json_data["max_tokens"] = MAX_TOKENS # (We don't want this to be changeable through the config file)
+        json_data["max_tokens"] = MAX_TOKENS
         json_data["prompt"] = OrpheusGen.format_orpheus_prompt("hi", OrpheusGen.DEFAULT_VOICE)
         headers = { "Content-Type": "application/json" }
         
@@ -382,7 +382,8 @@ class OrpheusGen:
                 return f"Orpheus service request failed: {response.status_code} - {response.text}"
         except Exception as e: 
             return f"Orpheus service request failed: {e}"
-        
+
+        # okay        
         return ""
 
 # ---
@@ -396,4 +397,5 @@ CUSTOM_TOKEN_PREFIX = "<custom_token_"
 
 # Default value is 1200 (~15 seconds)
 # Using higher value here for some extra headroom.
-MAX_TOKENS = 2000
+# FYI, also unfortunately allows for longer "hallucinations" as well
+MAX_TOKENS = 1800

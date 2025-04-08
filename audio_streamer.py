@@ -1,3 +1,5 @@
+import random
+import re
 import sounddevice as sd
 import numpy as np
 import queue
@@ -5,12 +7,14 @@ import time
 import traceback
 from app_types import UiMessage, UiMessageType
 from color import Color
+from l import L
 from llm_request_config import LlmRequestConfig
 from orpheus_gen import OrpheusGen
 from threading import Thread
 import queue
 import threading
 from app_util import AppUtil
+from shared import Shared
 from text_massager import TextMassager
 
 class AudioStreamer:
@@ -59,13 +63,25 @@ class AudioStreamer:
         Effectively stops the currently playing audio and clears pending tasks and buffers.
         Should be called after the stop_event has been set, and before it has been reset.
         """
-        self.clear_queue(self.text_queue)
-        self.clear_queue(self.audio_stream_queue)
+        AppUtil.clear_queue(self.text_queue)
+        AppUtil.clear_queue(self.audio_stream_queue)
 
-    def add_to_text_queue(self, text_chunks: list[str], voice: str) -> None:
-        for text_chunk in text_chunks:
+    def add_to_text_queue(self, text_segments: list[str], voice_code: str) -> None:
+        
+        for item in text_segments:
+            # Silently drop any items that are just punctuation because they make Orpheus generate random strings of phonemes
+            # (`TextSegmenter` needs more work on edges cases to prevent this from happening)
+            if re.fullmatch(r"[^\w\s]+", item.strip()):
+                L.w("Ignored bad item: {text_segment}")
+                continue
+            
+            voice = voice_code
+            if voice_code == "random":
+                i = random.randrange(0, len(OrpheusGen.AVAILABLE_VOICES))
+                voice = OrpheusGen.AVAILABLE_VOICES[i]
+
             # printt(f"Adding task: {massage_text_chunk_printout(chunk)}")
-            self.text_queue.put( (text_chunk, voice) )
+            self.text_queue.put( (item, voice) )
 
     def queue_feeder(self, audio_gen, audio_queue: queue.Queue, stop_event: threading.Event | None):
         """
@@ -110,8 +126,11 @@ class AudioStreamer:
             # --- End of generator loop ---
 
             if len(internal_buffer) > 0:
+
+                # TODO revisit; unclear about this whole section
+
                 s = f"Generator finished. Processing remaining {len(internal_buffer)} samples."
-                AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, s) # TODO revisit; when does this happen
+                L.d(s)
                 padding_size = BLOCKSIZE - len(internal_buffer)
                 padding = np.zeros(padding_size, dtype=DTYPE)
                 last_block = np.concatenate((internal_buffer, padding))
@@ -119,9 +138,9 @@ class AudioStreamer:
                 try:
                     audio_queue.put(last_block, block=True) # TODO some logic MAY be missing here, while true or smth
                 except queue.Full:
-                    AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.WARNING}Audio queue full while trying to add last block")
+                    L.e("Audio queue full while trying to add last block")
                 except Exception as e:
-                    AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.WARNING}Error trying to add last block to audio queue: {e}")
+                    L.e("Error trying to add last block to audio queue: {e}")
 
         except StopIteration:
             # Normal behavior
@@ -145,30 +164,28 @@ class AudioStreamer:
             AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.AUDIO_STATUS, s) 
 
         if status.output_underflow:
-            # TODO is this useful to know about?
-            AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG,f"{Color.WARNING}Audio output underflow") 
+            AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG,f"{Color.WARNING}Audio output underflow")
 
         try:
-            data = self.audio_stream_queue.get_nowait()            
+            data = self.audio_stream_queue.get_nowait()
             data_len = len(data)
             if data_len == num_frames:
                 # Normal behavior
                 outdata[:, 0] = data
             elif data_len < num_frames:
-                AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.WARNING}Audio chunk smaller ({data_len}) than expected ({num_frames}). Will pad.")
+                AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.WARNING}Audio chunk smaller ({data_len}) than expected ({num_frames}). Padding.")
                 outdata[:data_len, 0] = data
                 outdata[data_len:, 0].fill(0) # Fill rest with silence
             else: # data_len > frames
-                AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.WARNING}Audio chunk larger ({data_len}) than expected ({num_frames}). Will truncate.")
-                outdata[:, 0] = data[:num_frames]
-            self.audio_stream_queue.task_done()
+                AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.WARNING}Audio chunk larger ({data_len}) than expected ({num_frames}). Truncating.")
+                outdata[:, 0] = data[:num_frames] # Truncate the data
 
         except queue.Empty:
-            # Queue is empty, output silence
+            # Fill the buffer with silence to allow the stream to continue            
             outdata.fill(0)
         except Exception as e:
-            AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.ERROR}Error in audio_callback: {e}")
-
+            AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.ERROR}Error in audio callback: {e}")
+            outdata.fill(0)
     
     def worker(self, text_queue: queue.Queue, audio_queue: queue.Queue):
         """
@@ -207,8 +224,6 @@ class AudioStreamer:
 
                 # We have a task (text prompt)
                 prompt = task[0]
-                prompt = TextMassager.massage_text_chunk_for_orpheus(prompt)
-
                 voice = task[1]
 
                 try:
@@ -219,37 +234,28 @@ class AudioStreamer:
                         voice=voice
                     )
                     # Feed the audio queue; this blocks the worker until generation is done
+                                        
                     self.queue_feeder(audio_gen, audio_queue, stop_event=self.stop_event) # Pass the stop event
                     # Mark the task queue item as done *after* audio is fully generated/queued
                     text_queue.task_done()
 
                 except Exception as e:
-                    AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.ERROR}Error processing task '{prompt[:50]}...': {e}")
-                    traceback.print_exc()
+                    AppUtil.send_ui_message(
+                        self.ui_message_queue, UiMessageType.LOG, 
+                        f"{Color.ERROR}Error processing task '{prompt[:50]}...': {e}")
                     text_queue.task_done()
 
         except sd.PortAudioError as pae:
-            AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.ERROR}PortAudioError in audio worker: {pae}. Check audio device.")
+            s = "PortAudioError in audio worker: {pae}. Check audio device."
+            print(s)
             traceback.print_exc()
             exit(1)
         except Exception as e:
-            AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.ERROR}Critical error in audio worker: {e}")
+            s = f"Critical error in audio worker: {e}"
+            print(s)
             traceback.print_exc()
             exit(1)
 
-    def clear_queue(self, q: queue.Queue):
-        """Safely empties a given queue."""
-        cleared_count = 0
-        while not q.empty():
-            try:
-                q.get_nowait()
-                q.task_done() # Mark task as done if applicable (harmless for non-task queues)
-                cleared_count += 1
-            except queue.Empty:
-                break # Queue is empty
-            except Exception as e:
-                AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.LOG, f"{Color.WARNING}Couldn't clear audio queue item: {e}")
-                break # Stop clearing on error
 
 # ---
 

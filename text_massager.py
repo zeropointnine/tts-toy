@@ -1,39 +1,43 @@
 import re
 
 import emoji
+from color import Color
 from constants import Constants
 from constants_long import ConstantsLong
+from l import L
 
 class TextMassager:
 
     @staticmethod
-    def massage_assistant_message_for_orpheus(message: str) -> str:
-        # Replace consecutive asterisks or equals signs or dashes with a space
-        pattern = r'([\*\=\-])\1+' 
-        message = re.sub(pattern, ' ', message)
-        # Strip emojis
-        message = emoji.replace_emoji(message, replace=' ')
-        # Replace consecutive spaces with single space 
-        message = re.sub(r' +', ' ', message)
-        # Remove any leading or trailing whitespace
-        message = message.strip()
-        return message
+    def massage_assistant_text_segment_for_tts(text: str) -> str:
+        text = text.strip()        
+
+        # Orpheus can go nuts when fed a single character of punctuation, so don't
+        if len(text) == 1 and not (text.isdigit or text.isalpha):
+            return ""
+
+        text = TextMassager._double_asterisk_words_to_caps(text) 
+
+        text = emoji.replace_emoji(text, replace=' ')
+
+        return text
 
     @staticmethod
-    def massage_assistant_message_for_print(message: str) -> str:
-        message = message.strip()
-        # message = remove_orpheus_emote_tags(message)
-        return message
+    def massage_tts_text_segment_for_log(text: str) -> str:
+        # Collapse consecutive newlines into one
+        collapsed_text = re.sub(r'\n+', '\n', text)
+        # Replace remaining newlines with separator punctuation
+        result = collapsed_text.replace('\n', ' / ')
+        # Collapse consecutive spaces into one
+        collapsed_text = re.sub(r' +', ' ', text)
+        return result
 
     @staticmethod
-    def massage_text_chunk_for_orpheus(chunk: str) -> str:
-        # Unclear to me if Orpheus does emphasize all-caps words but
-        chunk = TextMassager._asterisk_words_to_caps(chunk) 
-        return chunk
-
-    @staticmethod
-    def _asterisk_words_to_caps(text: str) -> str:
-        pattern = r'\*(\w+)\*'
+    def _double_asterisk_words_to_caps(text: str) -> str:
+        """ 
+        Transform occurrences of **word** to WORD
+        """
+        pattern = r'\*\*(\w+)\*\*'
 
         def replace_func(match):
             word = match.group(1)
@@ -43,7 +47,14 @@ class TextMassager:
         return modified_text
 
     @staticmethod
-    def transform_direct_mode_user_input(user_input: str) -> str:
+    def massage_user_input_for_print(text: str) -> str:
+        lines = text.split("\n")
+        lines = [f"{Color.INPUT}{line}" for line in lines]
+        text = "\n".join(lines)
+        return text
+
+    @staticmethod
+    def transform_direct_mode_input_dev(user_input: str) -> str:
         original_input = user_input.strip()
         result = DEV_PROMPT_SHORTCUTS.get(original_input, original_input)
         return result
@@ -136,7 +147,6 @@ def remove_orpheus_emote_tags(text):
 
         # Fallback (shouldn't be strictly needed with the pattern but safe)
         return ""
-
 
     # Use re.sub with the replacement function
     # We might need multiple passes if tags are adjacent like "<laugh> <chuckle>"
