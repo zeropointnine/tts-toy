@@ -4,7 +4,6 @@ import emoji
 from color import Color
 from constants import Constants
 from constants_long import ConstantsLong
-from l import L
 
 class TextMassager:
 
@@ -23,13 +22,14 @@ class TextMassager:
         return text
 
     @staticmethod
-    def massage_tts_text_segment_for_log(text: str) -> str:
+    def massage_display_text_segment_for_log(text: str) -> str:
+        text = text.strip()
         # Collapse consecutive newlines into one
-        collapsed_text = re.sub(r'\n+', '\n', text)
+        collapsed_text = re.sub(r"\n+", "\n", text)
         # Replace remaining newlines with separator punctuation
-        result = collapsed_text.replace('\n', ' / ')
+        result = collapsed_text.replace("\n", " // ")
         # Collapse consecutive spaces into one
-        collapsed_text = re.sub(r' +', ' ', text)
+        collapsed_text = re.sub(r" +", " ", text)
         return result
 
     @staticmethod
@@ -37,7 +37,7 @@ class TextMassager:
         """ 
         Transform occurrences of **word** to WORD
         """
-        pattern = r'\*\*(\w+)\*\*'
+        pattern = r"\*\*(\w+)\*\*"
 
         def replace_func(match):
             word = match.group(1)
@@ -48,6 +48,7 @@ class TextMassager:
 
     @staticmethod
     def massage_user_input_for_print(text: str) -> str:
+        # Simply prepends color code at start of each line
         lines = text.split("\n")
         lines = [f"{Color.INPUT}{line}" for line in lines]
         text = "\n".join(lines)
@@ -56,9 +57,9 @@ class TextMassager:
     @staticmethod
     def transform_direct_mode_input_dev(user_input: str) -> str:
         original_input = user_input.strip()
-        result = DEV_PROMPT_SHORTCUTS.get(original_input, original_input)
+        result = ConstantsLong.DEV_PROMPT_SHORTCUTS.get(original_input, original_input)
         return result
-
+    
 # --------
 
 """
@@ -68,6 +69,7 @@ Vibe code
 import re
 import string # To easily get a set of punctuation characters
 
+# currently not using
 def remove_orpheus_emote_tags(text):
     """
     Removes <laugh> and <chuckle> tags with specific space/punctuation handling.
@@ -163,12 +165,3 @@ def remove_orpheus_emote_tags(text):
     new_text = re.sub(r" +", " ", new_text)
 
     return new_text.strip() # Remove leading/trailing whitespace potentially left
-
-# ---
-
-DEV_PROMPT_SHORTCUTS = {
-    "1": ConstantsLong.TEST_TEXT_1,
-    "2": ConstantsLong.TEST_TEXT_2,
-    "3": ConstantsLong.TEST_TEXT_3,
-    "4": ConstantsLong.TEST_TEXT_4,
-}

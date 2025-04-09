@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Callable
 import requests
 import json
 import time
@@ -7,11 +7,16 @@ import threading
 import queue
 import asyncio
 
-from app_types import UiMessageType
+from app_types import *
 from app_util import AppUtil
 from color import Color
+from l import L
 from llm_request_config import LlmRequestConfig
+from shared import Shared
 from text_massager import TextMassager
+
+AudioChunkQueue = queue.Queue[np.ndarray | bytes | None]
+
 
 class OrpheusGen:
     """
@@ -25,30 +30,49 @@ class OrpheusGen:
     AVAILABLE_VOICES = ["tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe"]
     DEFAULT_VOICE = "tara"
 
-    def __init__(self, stop_event: threading.Event, ui_message_queue: queue.Queue):        
+    def __init__(
+            self, 
+            stop_event: threading.Event, 
+            ui_message_queue: queue.Queue[UiMessage],
+            get_audio_queue_size: Callable[[], int]
+    ):        
         self.stop_event = stop_event
         self.ui_message_queue = ui_message_queue
+        self.get_audio_queue_size = get_audio_queue_size
 
-    def audio_chunk_generator(
-            self,
-            request_config: LlmRequestConfig,
-            prompt: str,
-            voice: str
-    ):
+    def audio_chunk_generator(self, request_config: LlmRequestConfig, tts_item: TtsItem):
         """
-        Generates TTS audio and yields chunks (np.ndarray, int16) as they become available.
-        Starts by making network request to Orpheus LLM.
+        Generates TTS audio.
+        Does this by yielding chunks (np.ndarray, int16) 
+        via streamed completions service request as they become available.
         Checks stop_event to allow interruption.
         """
+                
+        if not tts_item.should_massage:
+            tts_text = tts_item.raw_text
+        else:
+            tts_text = TextMassager.massage_assistant_text_segment_for_tts(tts_item.raw_text)
+            if not tts_text:
+                # Skip Orpheus gen of empty string or single char punctuation or else it goes nuts.
+                # Just send the text event to be displayed
+                from audio_streamer import AudioStreamer
+                synced_text_item = SyncedPrintItem(AudioStreamer.tick_num, tts_item.raw_text)
+                Shared.synced_text_queue.append(synced_text_item)
+                return
 
-        AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.GEN_STATUS, (prompt, 0.0, 0.0))
+        log_text = TextMassager.massage_display_text_segment_for_log(tts_item.raw_text)
 
-        audio_chunk_queue = queue.Queue()
+        gen_status = GenStatus(log_text, 0.0, 0.0)
+        AppUtil.send_ui_message(self.ui_message_queue, GenStatusUiMessage(gen_status))
+
+        audio_chunk_queue = AudioChunkQueue()
+
+        self.is_first_chunk = True
 
         sync_token_gen = self.make_request_and_generate_tokens(
-            request_config = request_config,
-            prompt=prompt,
-            voice=voice
+            request_config=request_config,
+            prompt=tts_text,
+            voice=tts_item.voice
         )
 
         async def async_token_gen_wrapper():
@@ -62,12 +86,13 @@ class OrpheusGen:
 
         async def async_producer(
             stop_event: threading.Event | None, 
-            audio_chunk_queue: queue.Queue, 
+            audio_chunk_queue: AudioChunkQueue, 
             token_gen_wrapper
         ):
             """
             Runs the async token decoder and puts audio chunks onto the audio_chunk_queue.
             """
+            from audio_streamer import AudioStreamer
 
             num_samples = 0
             start_time = time.time()
@@ -84,7 +109,6 @@ class OrpheusGen:
 
                     # Check stop event within the loop as well
                     if stop_event and stop_event.is_set():
-                        # printt("Async Producer: Stop event detected.")
                         did_complete = False
                         break
 
@@ -99,35 +123,42 @@ class OrpheusGen:
                         num_samples += audio_chunk_np.shape[0]
                         audio_chunk_queue.put(audio_chunk_np)
                     else:
-                        text = f"{Color.WARNING}Received unexpected audio chunk type: {type(audio_chunk)}. Skipping."
-                        AppUtil.send_ui_message(self.ui_message_queue,  UiMessageType.LOG, text)
+                        L.w("Received unexpected audio chunk type: {type(audio_chunk)}. Skipping.")
+                        continue
 
-                    # Send status update
+                    if self.is_first_chunk:
+                        self.is_first_chunk = False
+                        target_tick = AudioStreamer.tick_num + self.get_audio_queue_size()
+                        synced_text_item = SyncedPrintItem(target_tick, tts_item.raw_text)
+                        Shared.synced_text_queue.append(synced_text_item)
+
+                    # Send UI status update
                     if time.time() - last_ui_message_time > 0.15:
                         last_ui_message_time = time.time()
-                        duration = num_samples / SAMPLE_RATE
+                        length = num_samples / SAMPLE_RATE
                         elapsed = time.time() - start_time
-                        AppUtil.send_ui_message(self.ui_message_queue, UiMessageType.GEN_STATUS, (prompt, duration, elapsed))
+                        gen_status = GenStatus(log_text, length, elapsed)
+                        AppUtil.send_ui_message(self.ui_message_queue, GenStatusUiMessage(gen_status))
 
             except Exception as e:
-                text = f"{Color.ERROR}Error in async_producer: {e}"
-                AppUtil.send_ui_message(self.ui_message_queue,  UiMessageType.LOG, text)
+                text = f"{Color.ERROR}Error in audio gen: {e}"
+                AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
                 did_complete = False
                 # Optionally put an error sentinel onto the queue
 
             finally:
                 # Clear the gen status text
-                AppUtil.send_ui_message(self.ui_message_queue,  UiMessageType.GEN_STATUS, ("", 0, 0))
+                gen_status = GenStatus(log_text, 0.0, 0.0)
+                AppUtil.send_ui_message(self.ui_message_queue, GenStatusUiMessage(gen_status))
                 
-                # Send success ui message
+                # Send on-complete ui message
                 if did_complete:
                     audio_length = num_samples / SAMPLE_RATE
                     elapsed = time.time() - start_time
                     multi = audio_length / elapsed
-                    massaged_prompt = TextMassager.massage_tts_text_segment_for_log(prompt)
-                    s = f"{Color.MEDIUM}{massaged_prompt}\n"
+                    s = f"{Color.MEDIUM}{log_text}\n"
                     s += f"length: {audio_length:.2f}s elapsed: {elapsed:.2f}s ({multi:.1f}x)"
-                    AppUtil.send_ui_message(self.ui_message_queue,  UiMessageType.LOG, s)
+                    AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(s))
 
                 # Explicitly close the async generator
                 if decoder_gen and hasattr(decoder_gen, 'aclose'):
@@ -136,7 +167,7 @@ class OrpheusGen:
                         # printt("Tokens decoder closed.") # Optional debug
                     except Exception as e:
                         text = f"{Color.WARNING}Error closing tokens_decoder: {e}"
-                        AppUtil.send_ui_message(self.ui_message_queue,  UiMessageType.LOG, text)
+                        AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
                 
                 # Explicitly close the async token generator wrapper
                 if token_gen and hasattr(token_gen, 'aclose'):
@@ -145,12 +176,16 @@ class OrpheusGen:
                         # printt("Token gen wrapper closed.") # Optional debug
                     except Exception as e:
                         text = f"{Color.WARNING}Error closing token_gen_wrapper: {e}"
-                        AppUtil.send_ui_message(self.ui_message_queue,  UiMessageType.LOG, text)
+                        AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
 
                 # Sentinel to indicate completion
                 audio_chunk_queue.put(None)
 
-        def run_async_producer(stop_event: threading.Event | None, audio_chunk_queue: queue.Queue, token_gen_wrapper):
+        def run_async_producer(
+                stop_event: threading.Event | None, 
+                audio_chunk_queue: AudioChunkQueue, 
+                token_gen_wrapper
+        ):
             """Sets up and runs the asyncio event loop for the producer."""
             # Note: message_queue is accessed from the outer scope
             try:
@@ -213,7 +248,7 @@ class OrpheusGen:
         producer_thread.join(timeout=5) # Add a timeout
         if producer_thread.is_alive():
             pass
-            # send_ui_message(message_queue, UiMessageType.LOG, "Audio producer thread did not finish cleanly.", level=1)
+            # send_ui_message(message_queue, LogUiMessage() "Audio producer thread did not finish cleanly.", level=1)
 
     def make_request_and_generate_tokens(
             self,
@@ -222,6 +257,8 @@ class OrpheusGen:
             voice: str
     ):
         """ Makes LLM completions request and generates Orpheus tokens by streaming the response. """
+
+        # TODO integrate this into LlmResponseStreamer
 
         headers = { "Content-Type": "application/json" }
         json_data = request_config.request_dict.copy()
@@ -237,12 +274,12 @@ class OrpheusGen:
             )
         except Exception as e:
             text = f"{Color.ERROR}Orpheus service request failed: {e}"
-            AppUtil.send_ui_message(self.ui_message_queue,  UiMessageType.LOG, text)
+            AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
             return
 
         if response.status_code != 200:
             text = f"{Color.ERROR}Orpheus service request failed: {response.status_code} - {response.text}"
-            AppUtil.send_ui_message(self.ui_message_queue,  UiMessageType.LOG, text)
+            AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
             return
 
         # Process the streamed response
@@ -275,7 +312,7 @@ class OrpheusGen:
         
                 except json.JSONDecodeError as e:
                     text = f"{Color.ERROR}Error decoding API JSON response: {e}"
-                    AppUtil.send_ui_message(self.ui_message_queue,  UiMessageType.LOG, text)
+                    AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
                     continue
 
     # ---
@@ -350,15 +387,6 @@ class OrpheusGen:
         # Import here to avoid circular imports
         from decoder import convert_to_audio as orpheus_convert_to_audio
         return orpheus_convert_to_audio(multiframe, count)
-
-    def send_ui_message(self, typ: str, value: Any) -> None:
-        """Sends a message to the main application via the message queue."""
-        ui_message = (typ, value)
-        try:
-            self.ui_message_queue.put_nowait(ui_message)
-        except queue.Full:
-            print("Couldn't add ui message to queue:", ui_message)
-            pass
 
     @staticmethod
     def ping(request_config: LlmRequestConfig) -> str:

@@ -4,9 +4,8 @@ import os
 import queue
 import socket
 import tempfile
-from typing import Any
 
-from app_types import UiMessage, UiMessageType
+from app_types import *
 from color import Color
 from constants import Constants
 from l import L
@@ -103,14 +102,14 @@ class AppUtil:
 
         error_message = OrpheusGen.ping(orpheus_request_config)        
         if error_message:
-            AppUtil.send_ui_message(ui_message_queue, UiMessageType.LOG, Color.ERROR + error_message)
+            AppUtil.send_ui_message(ui_message_queue, LogUiMessage(Color.ERROR + error_message))
 
             content_error_message = f"{Color.ERROR}Orpheus server at {orpheus_request_config.url} may not be online.\n"
             content_error_message += f"{Color.ERROR}Check config.json file."
-            AppUtil.send_ui_message(ui_message_queue, UiMessageType.CONTENT_ADD, content_error_message)
+            AppUtil.send_ui_message(ui_message_queue, PrintUiMessage(content_error_message))
         else:
             AppUtil.send_ui_message(
-                ui_message_queue, UiMessageType.LOG, f"Orpheus server is online\n{orpheus_request_config.url}")
+                ui_message_queue, LogUiMessage(f"Orpheus server is online\n{orpheus_request_config.url}"))
 
     @staticmethod
     def import_decoder_with_feedback(ui_message_queue: queue.Queue) -> None:
@@ -118,25 +117,15 @@ class AppUtil:
         if Shared.has_imported_decoder:
             return
         def go():
-            AppUtil.send_ui_message(ui_message_queue, UiMessageType.LOG, "Initializing torch")
+            AppUtil.send_ui_message(ui_message_queue, LogUiMessage("Initializing torch"))
             from decoder import snac_device
             Shared.has_imported_decoder = True
-            AppUtil.send_ui_message(ui_message_queue, UiMessageType.LOG, f"'SNAC' device: {snac_device}")
+            AppUtil.send_ui_message(ui_message_queue, LogUiMessage(f"'SNAC' device: {snac_device}"))
         Util.run_in_thread(go)            
 
     @staticmethod
-    def send_ui_message(ui_message_queue: queue.Queue[UiMessage], typ: UiMessageType, value: Any) -> None:
-        """
-        Sends a message to the main application via the ui message queue.
-        
-        :param typ: The "type" of the message. Eg, UiMessageType.LOG.
-        """
-        ui_message = UiMessage(typ, value)
-        try:
-            ui_message_queue.put_nowait(ui_message)
-        except queue.Full:
-            print("Couldn't add ui message to queue:", ui_message)
-            pass
+    def send_ui_message(ui_message_queue: queue.Queue[UiMessage], ui_message: UiMessage) -> None:
+        ui_message_queue.put_nowait(ui_message)
 
     @staticmethod
     def clear_queue(q: queue.Queue):

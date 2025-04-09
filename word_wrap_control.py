@@ -20,7 +20,7 @@ class WordWrapControl(BufferControl):
         self._buffer = Buffer()
         self._model = TextModel()
         self._lexer = ParagraphLexer(self._model.line_styles)
-        super().__init__(buffer=self._buffer, lexer=self._lexer, focusable=False, *args, **kwargs)
+        super().__init__(buffer=self._buffer, lexer=self._lexer, *args, **kwargs)
 
     # override
     def create_content(self, width: int, height: int, preview_search: bool = False) -> UIContent:
@@ -51,6 +51,10 @@ class WordWrapControl(BufferControl):
         self._model.replace_last_block(new_block_text)
         self._update_buffer() # Trigger UI update
 
+    def erase_last_block(self) -> None:
+        self._model.erase_last_block()
+        self._update_buffer() # Trigger UI update
+
     def clear(self) -> None:
         self._model.clear()
         self._update_buffer()
@@ -61,14 +65,22 @@ class WordWrapControl(BufferControl):
 
 class TextModel:
 
-    # TODO later, limit lines to only last n items
-    
+    # Max size prevents recalculations of the final string from being too onerous.
+    MAX_BLOCKS = 50
+
     def __init__(self):        
         self.width = 60    
+        
+        # A block is a string which can include line breaks.
+        # A sequence of blocks get displayed with a line separator between them.
+        # A full "audio message" (like a full response) gets put in one block.
+        # UI feedback message is displayed in one block. Etc.
         self.blocks: list[str] = []
+
+        # Parallel lists that are derived from `blocks`
         self.line_texts: list[str] = []
         self.line_styles: list[str] = []
-        self.final_string: str = ""
+        
         self.is_dirty: bool = False
 
     def clear(self) -> None:
@@ -83,31 +95,37 @@ class TextModel:
         self.is_dirty = True
 
     def add_block(self, block: str) -> None:
+        if len(self.blocks) >= TextModel.MAX_BLOCKS:
+            del self.blocks[0]
         self.blocks.append(block)        
         self.add_lines_from_block(block)
+
         self.is_dirty = True # Mark dirty after adding a block
 
     def append_to_last_block(self, text_to_append: str) -> None:
         """Appends text to the last block and marks the model dirty."""
         if not self.blocks:
-            # If there are no blocks, treat this as adding the first block
             self.add_block(text_to_append)
-        else:
-            # Append to the existing last block string
-            self.blocks[-1] += text_to_append
-            # Mark as dirty to trigger regeneration on next get_value/update
             self.is_dirty = True
+            return
+
+        self.blocks[-1] += text_to_append
+        self.is_dirty = True
 
     def replace_last_block(self, new_block_text: str) -> None:
         """Replaces the last block and marks the model dirty."""
         if not self.blocks:
-            # If there are no blocks, treat this as adding the first block
             self.add_block(new_block_text)
-        else:
-            # Replace the content of the last block
-            self.blocks[-1] = new_block_text
-            # Mark as dirty to trigger regeneration on next get_value/update
             self.is_dirty = True
+            return
+
+        self.blocks[-1] = new_block_text
+        self.is_dirty = True
+
+    def erase_last_block(self) -> None:
+        if self.blocks:
+            self.blocks.pop()
+        self.is_dirty = True
 
     def add_lines_from_block(self, block: str) -> None:
 
@@ -148,6 +166,10 @@ class TextModel:
             self.add_lines_from_block(block)
 
     def get_value(self) -> str:
+        """
+        Returns the final, long string, which gets put into a Buffer for display.
+        Does a recalculation If dirty.
+        """
         if self.is_dirty:
             self.is_dirty = False
             self.regenerate_lines()
@@ -156,17 +178,17 @@ class TextModel:
     @staticmethod
     def get_style_and_text(paragraph: str) -> tuple[str, str]:
         """
-        Expects an optional special token at beginning of string, 
+        Optionally expects a special token at beginning of string, 
         which is transformed into a prompt-toolkit style.
-        Format is "[RRGGBB]", or "[RRGGBB+i]", where "i" is a one-letter code.
-        Returns style and string stripped of special token.
+        Format is either "[RRGGBB]" or "[RRGGBB+a]", where "a" is a one-letter code.
+        Returns tuple of style and string, stripped of the special token.
         """
         match = re.match(r'^\[([0-9a-fA-F]{6})\]', paragraph)
         if match:
             hex_color = match.group(1)  # The captured hex value
             remaining_string = paragraph[len(match.group(0)):]
             return f"fg: #{hex_color}", remaining_string
-        # Match "[RRGGBB+i]" (or other single letter codes)
+        # Match "[RRGGBB+a]" (or other single letter codes)
         match_complex = re.match(r'^\[([0-9a-fA-F]{6})\+([a-zA-Z])\]', paragraph)
         if match_complex:
             hex_color = match_complex.group(1)
@@ -186,7 +208,6 @@ class TextModel:
             return style_string, remaining_string
         else:
             # No special token found
-            return "", paragraph
             return "", paragraph
 
 # ---

@@ -60,7 +60,7 @@ Lastly, the inner `request_dict` object can be populated with properties which w
 
     python app.py
 
-Reminder here that Orpheus model inference + 'SNAC' decoding is not a lightweight task. Anecdotal datapoint: On my dev system (Ryzen 7700 + 3080Ti), audio generation is only about 1.5x faster than real-time.
+Reminder here that Orpheus model inference + 'SNAC' decoding is not a lightweight task. Anecdotal datapoint: On my dev system (Ryzen 7700 + 3080Ti), audio generation using ta Q8 version of the model is only about 1.5x faster than real-time.
 
 # Updates
 
