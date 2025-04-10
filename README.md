@@ -64,6 +64,10 @@ Reminder here that Orpheus model inference + 'SNAC' decoding is not a lightweigh
 
 # Updates
 
+2025-04-09
+
+- TTS text now displays in sync with audio segment being played. Toggle with `!sync`.
+
 2025-04-08
 
 - Chat response now streams, allowing for audio generation to begin after the first several words are received. 
