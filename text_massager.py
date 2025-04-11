@@ -60,6 +60,26 @@ class TextMassager:
         result = ConstantsLong.DEV_PROMPT_SHORTCUTS.get(original_input, original_input)
         return result
     
+    @staticmethod
+    def massage_text_for_filename(text: str, max_chars: int) -> str:
+        
+        # Replace illegal chars with underscores
+        # illegal_chars_pattern = r'[<>:"/\\|?*\x00-\x1F]'
+        # text = re.sub(illegal_chars_pattern, ' ', text)
+
+        text = text.lower()
+
+        # Strip all chars except alpha, digit, space and underscore
+        text = re.sub(r'[^\w\s]', '', text)
+        # Replace spaces with underscores
+        text = re.sub(" ", "_", text)
+        # Collapse consecutive underscores
+        text = re.sub(r'_+', '_', text) 
+        # Strip underscores
+        text = text.strip("_")
+        # Truncate to max_chars
+        return text[:max_chars]
+    
 # --------
 
 """

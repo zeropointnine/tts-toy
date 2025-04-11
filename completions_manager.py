@@ -2,36 +2,35 @@ import queue
 import threading
 from app_types import *
 from app_util import AppUtil
-from audio_streamer import AudioStreamer
 from color import Color
 from l import L
-from llm_request_config import LlmRequestConfig
-from llm_response_streamer import LlmResponseStreamer
+from completions_request_config import CompletionsConfig
+from completions_streamer import CompletionsStreamer
 
-class LlmStreamManager:
+class CompletionsManager:
     """
-    Wraps a LlmResponseStreamer, which it runs in its own thread.
-    And maintains chat history.
+    Wraps a `CompletionsStreamer`, which it runs in its own thread.
+    Maintains chat history.
     """
 
     def __init__(
         self,
-        config: LlmRequestConfig, 
+        config: CompletionsConfig, 
         system_prompt: str,
-        ui_message_queue: queue.Queue[UiMessage],
-        audio_streamer: AudioStreamer
+        tts_queue: queue.Queue[TtsItem],
+        ui_queue: queue.Queue[UiMessage],
     ):
-        self.system_prompt = system_prompt
         self.config = config
-        self.ui_message_queue = ui_message_queue
-        self.audio_streamer = audio_streamer
+        self.system_prompt = system_prompt
+        self.tts_queue = tts_queue
+        self.ui_queue = ui_queue
 
         self.system_prompt = system_prompt
 
         self.history: list[tuple[str, str]] = []
         self.init_history()
 
-        self.streamer: LlmResponseStreamer = None  # type: ignore
+        self.streamer: CompletionsStreamer = None  # type: ignore
         self._is_active = False
 
     def init_history(self) -> None:
@@ -55,24 +54,25 @@ class LlmStreamManager:
         # Make new llm streamer instance and use it to make request inside a new thread
         # Thread is fire-and-forget
         def go():
-            self.streamer = LlmResponseStreamer(
+            self.streamer = CompletionsStreamer(
+                tts_queue=self.tts_queue,
                 config=self.config, 
                 voice=voice,
-                ui_message_queue=self.ui_message_queue,
-                audio_streamer=self.audio_streamer
+                ui_queue=self.ui_queue
             )
             self._is_active = True
             content, error_message = self.streamer.make_request(user_prompt, self.history)
             self._is_active = False
 
             if content:
-                L.d(f"Full response received:\n{content}")
+                # L.d(f"Full response received:\n{content}")
+                pass 
             if content and not dont_add_to_history:
                 self.history.append(("user", user_prompt))
                 self.history.append(("assistant", content))
 
             if error_message:
-                AppUtil.send_ui_message(self.ui_message_queue, LogUiMessage(f"{Color.ERROR}{error_message}"))
+                AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"{Color.ERROR}{error_message}"))
 
         self.thread = threading.Thread(target=go, daemon=True)
         self.thread.start()

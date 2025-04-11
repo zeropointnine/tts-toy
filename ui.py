@@ -1,26 +1,22 @@
-import threading
-import asyncio
-import queue
-import time
-import traceback
 from typing import Callable, cast
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.layout.containers import HSplit, Window, VSplit
 from prompt_toolkit.widgets import HorizontalLine, VerticalLine
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
-from prompt_toolkit.layout import ScrollablePane
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
+from app_util import AppUtil
 from color import Color
 from app_types import *
 from hex_color_processor import HexColorProcessor
+from util import Util
 from word_wrap_control import WordWrapControl
 
 class Ui:
     """
-    Simple holder for prompt-toolkit UI objects
+    Mostly just a simple holder for prompt-toolkit UI objects
     """
 
     def __init__(self, 
@@ -107,3 +103,25 @@ class Ui:
         @kb.add("enter", eager=True) # note eager
         async def _(_): 
             await self.on_enter()
+
+    def update_audio_status(self, info: str) -> None:
+        
+        s = f"buffer {info}" if info else "buffer 0s"
+        s = " " * (50 - 1 - len(s)) + s
+        if not info:
+            s = Color.DARK + s
+        self.audio_status_buffer.text = s
+        self.application.invalidate() 
+
+    def update_gen_status(self, gen_status: GenStatus) -> None:
+        
+        text, length, elapsed = gen_status
+
+        s = ""
+        if elapsed:
+            s = f"Generating audio\n"
+            s += Color.MEDIUM + Util.truncate_string(text, 50 - 1, ellipsize=True) + "\n"
+            elapsed_string = AppUtil.elapsed_string(elapsed)
+            multiplier = f"({(length / elapsed):.1f}x)" if elapsed > 0 else ""
+            s += f"length: {length:.2f}s elapsed: {elapsed_string} {multiplier}"
+        self.gen_status_buffer.text = s 

@@ -1,11 +1,11 @@
 import aiohttp
 import asyncio
-from llm_request_config import LlmRequestConfig
+from completions_request_config import CompletionsConfig
 
-class LlmRequester:
+class CompletionsSimpleRequester:
     """
-    Makes non-streaming OpenAI "completions" API calls
-    Maintains chat history state.
+    Makes non-streaming "completions" API calls
+    Maintains chat history state internally.
     """
 
     def __init__(self):
@@ -51,7 +51,7 @@ class LlmRequester:
 
     # ---
 
-    async def do_request(self, user_message: str, config: LlmRequestConfig, dont_add_to_history: bool=False) -> tuple[str, str]:
+    async def do_request(self, user_message: str, config: CompletionsConfig, dont_add_to_history: bool=False) -> tuple[str, str]:
         """
         Performs the request asynchronously.
         Returns tuple of (assistant message, error message), mutually exclusive.
@@ -80,7 +80,7 @@ class LlmRequester:
                 # Consider logging the full error here in a real application
                 return "", f"Unexpected Error: {e}"
 
-    async def _make_request(self, user_message: str, config: LlmRequestConfig) -> aiohttp.ClientResponse:
+    async def _make_request(self, user_message: str, config: CompletionsConfig) -> aiohttp.ClientResponse:
         """
         Makes the async chat request to the completions endpoint.
         Can raise exceptions (e.g., network errors).
@@ -145,4 +145,3 @@ class LlmRequester:
              return "", f"Error parsing response structure: {e}"
         except Exception as e: # Catch other unexpected errors during processing
             return "", f"Unexpected error processing response: {e}"
-

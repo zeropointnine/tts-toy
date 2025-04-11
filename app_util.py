@@ -2,19 +2,23 @@ import json
 import logging
 import os
 import queue
+import random
 import socket
 import tempfile
-
 from app_types import *
 from color import Color
 from constants import Constants
 from l import L
-from llm_request_config import LlmRequestConfig
+from completions_request_config import CompletionsConfig
 from shared import Shared
 from util import Util
 
 class AppUtil:
-    
+
+    @staticmethod
+    def is_dev() -> bool:
+        return bool(os.environ.get("TTS_TOY_DEV"))
+
     @staticmethod
     def init_logging() -> None:
 
@@ -24,7 +28,9 @@ class AppUtil:
 
         # init "L"
         path = os.path.join(tempfile.gettempdir(), f"{Constants.APP_NAME}.log")
-        L.init(name="orpheus-tty-toy", path=path, level=logging.DEBUG)
+        level = logging.DEBUG if AppUtil.is_dev() else logging.INFO
+        L.init(name="orpheus-tty-toy", path=path, level=level)
+        L.i(f"=== [START] =============== log level: {level}")
         
     @staticmethod
     def load_config_json() -> tuple:
@@ -56,7 +62,7 @@ class AppUtil:
             return error_prefix + "Missing required json object \"orpheus_llm\"", ""
 
         try:
-            orpheus_request_config = LlmRequestConfig.from_dict( data["orpheus_llm"] )
+            orpheus_request_config = CompletionsConfig.from_dict( data["orpheus_llm"] )
         except Exception as e: 
             return (error_prefix + str(e), "", None, None)
 
@@ -71,7 +77,7 @@ class AppUtil:
             )
 
         try:
-            chat_request_config = LlmRequestConfig.from_dict( data["chatbot_llm"] )
+            chat_request_config = CompletionsConfig.from_dict( data["chatbot_llm"] )
         except Exception as e: 
             return (
                 "", 
@@ -97,35 +103,35 @@ class AppUtil:
         )
 
     @staticmethod
-    def ping_orpheus_server_with_feedback(orpheus_request_config: LlmRequestConfig, ui_message_queue: queue.Queue) -> None:
+    def ping_orpheus_server_with_feedback(orpheus_request_config: CompletionsConfig, ui_queue: queue.Queue) -> None:
         from orpheus_gen import OrpheusGen
 
         error_message = OrpheusGen.ping(orpheus_request_config)        
         if error_message:
-            AppUtil.send_ui_message(ui_message_queue, LogUiMessage(Color.ERROR + error_message))
+            AppUtil.send_ui_message(ui_queue, LogUiMessage(Color.ERROR + error_message))
 
             content_error_message = f"{Color.ERROR}Orpheus server at {orpheus_request_config.url} may not be online.\n"
             content_error_message += f"{Color.ERROR}Check config.json file."
-            AppUtil.send_ui_message(ui_message_queue, PrintUiMessage(content_error_message))
+            AppUtil.send_ui_message(ui_queue, PrintUiMessage(content_error_message))
         else:
             AppUtil.send_ui_message(
-                ui_message_queue, LogUiMessage(f"Orpheus server is online\n{orpheus_request_config.url}"))
+                ui_queue, LogUiMessage(f"Orpheus server is online\n{orpheus_request_config.url}"))
 
     @staticmethod
-    def import_decoder_with_feedback(ui_message_queue: queue.Queue) -> None:
+    def import_decoder_with_feedback(ui_queue: queue.Queue) -> None:
         # UI nicety
         if Shared.has_imported_decoder:
             return
         def go():
-            AppUtil.send_ui_message(ui_message_queue, LogUiMessage("Initializing torch"))
+            AppUtil.send_ui_message(ui_queue, LogUiMessage("Initializing torch"))
             from decoder import snac_device
             Shared.has_imported_decoder = True
-            AppUtil.send_ui_message(ui_message_queue, LogUiMessage(f"'SNAC' device: {snac_device}"))
+            AppUtil.send_ui_message(ui_queue, LogUiMessage(f"'SNAC' device: {snac_device}"))
         Util.run_in_thread(go)            
 
     @staticmethod
-    def send_ui_message(ui_message_queue: queue.Queue[UiMessage], ui_message: UiMessage) -> None:
-        ui_message_queue.put_nowait(ui_message)
+    def send_ui_message(ui_queue: queue.Queue[UiMessage], ui_message: UiMessage) -> None:
+        ui_queue.put_nowait(ui_message)
 
     @staticmethod
     def clear_queue(q: queue.Queue):
@@ -149,3 +155,27 @@ class AppUtil:
         minutes = seconds // 60
         seconds = seconds % 60
         return f"{minutes}m{seconds:.1f}s"
+        
+    @staticmethod
+    def add_to_tts_queue(
+            tts_queue: queue.Queue[TtsItem],
+            texts: list[str], voice_code: str, should_massage: bool, 
+            has_message_start: bool
+    ) -> None:
+        for i, text in enumerate(texts):
+            voice = voice_code
+            if voice_code == "random":
+                i = random.randrange(0, len(Constants.ORPHEUS_VOICES))
+                voice = Constants.ORPHEUS_VOICES[i]
+
+            is_message_start = (has_message_start and i == 0)
+            item = TtsContentItem(
+                raw_text=text, should_massage=should_massage, voice=voice, 
+                is_message_start=is_message_start
+            )
+            # L.d(f"sending tts_item: [{text}]")
+            tts_queue.put(item)
+
+    @staticmethod
+    def add_to_tts_queue_end_item(tts_queue: queue.Queue[TtsItem]) -> None: 
+        tts_queue.put(TtsEndItem())

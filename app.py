@@ -1,3 +1,4 @@
+import os
 import threading
 import asyncio
 import queue
@@ -8,8 +9,8 @@ from app_util import AppUtil
 from constants import Constants
 from l import L
 from color import Color
-from llm_request_config import LlmRequestConfig
-from llm_stream_manager import LlmStreamManager
+from completions_request_config import CompletionsConfig
+from completions_manager import CompletionsManager
 from shared import Shared
 from text_segmenter import TextSegmenter
 from orpheus_gen import OrpheusGen
@@ -33,27 +34,29 @@ class App:
         tup = AppUtil.load_config_json()
         error_message = tup[0]
         warning_message = tup[1]
-        self.orpheus_request_config: LlmRequestConfig = tup[2]
-        self.chat_request_config: LlmRequestConfig | None = tup[3]
+        self.orpheus_request_config: CompletionsConfig = tup[2]
+        self.chat_request_config: CompletionsConfig | None = tup[3]
 
         if error_message:
             print("\n" + error_message)
             exit(1)                  
 
         self.stop_audio_event = threading.Event()
-        self.ui_message_queue = queue.Queue[UiMessage]()
+        self.ui_queue = queue.Queue[UiMessage]()
+        self.tts_queue = queue.Queue[TtsItem]()
         
         self.audio_streamer = AudioStreamer(
             stop_event=self.stop_audio_event, 
-            ui_message_queue=self.ui_message_queue,
-            orpheus_request_config=self.orpheus_request_config
+            tts_queue=self.tts_queue,
+            ui_queue=self.ui_queue,
+            completions_config=self.orpheus_request_config
         ) 
 
-        self.llm_streamer_manager = LlmStreamManager(
-            config=cast(LlmRequestConfig, self.chat_request_config), 
+        self.llm_streamer_manager = CompletionsManager(
+            config=cast(CompletionsConfig, self.chat_request_config), 
             system_prompt=ConstantsLong.SYSTEM_PROMPT, 
-            ui_message_queue=self.ui_message_queue,
-            audio_streamer=self.audio_streamer
+            tts_queue=self.tts_queue,
+            ui_queue=self.ui_queue
         )
 
         self.voice_code = "leah" 
@@ -68,11 +71,11 @@ class App:
         self.print_stroke_flag: bool = True
 
         if warning_message:
-            AppUtil.send_ui_message(self.ui_message_queue, LogUiMessage(Color.WARNING + warning_message))
+            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(Color.WARNING + warning_message))
 
         def go():
-            AppUtil.ping_orpheus_server_with_feedback(self.orpheus_request_config, self.ui_message_queue)
-            AppUtil.import_decoder_with_feedback(self.ui_message_queue)
+            AppUtil.ping_orpheus_server_with_feedback(self.orpheus_request_config, self.ui_queue)
+            AppUtil.import_decoder_with_feedback(self.ui_queue)
         Util.run_in_thread(go, 0.5) # allows app to startup faster
 
     async def run(self):
@@ -83,7 +86,7 @@ class App:
             await self.ui.application.run_async()
         except Exception as e:
             AppUtil.send_ui_message(
-                self.ui_message_queue, 
+                self.ui_queue, 
                 LogUiMessage(f"{Color.ERROR}Unexpected error. Could be bad. Consider restart.\n{e}") 
             )
         finally:
@@ -118,7 +121,7 @@ class App:
 
         match command:
 
-            case value if value in VOICE_CODES:
+            case value if value in ORPHEUS_VOICE_CODES:
                 self.voice_code = command
                 if self.voice_code == "random":
                     feedback = "Changed voice to: Random voice per generated audio segment"
@@ -164,8 +167,21 @@ class App:
 
             case "sync":
                 Shared.sync_text_to_audio = not Shared.sync_text_to_audio
-                feedback = "\"Sync text to audio playback\" set to "
-                feedback += "on" if Shared.sync_text_to_audio else "off"
+                feedback = "\"Sync text to audio playback\" set to: "
+                feedback += "On" if Shared.sync_text_to_audio else "Off"
+
+            case "save":
+                if Shared.save_to_disk:
+                    Shared.save_to_disk = False
+                    feedback = "\"Save audio output to disk\" set to: Off"
+                else:
+                    try:
+                        os.makedirs(Shared.save_dir, exist_ok=True)
+                        feedback = "\"Save audio output to disk\" set to: On"
+                        feedback += f"\n{Color.with_letter(Color.FEEDBACK_DARK, "i")}{Shared.save_dir}"
+                        Shared.save_to_disk = True
+                    except Exception as e:
+                        feedback = f"Problem with output directory {Shared.save_dir}: {e}"
 
             case value if value in ["help", "h", "menu"]:
                 should_print_menu = True
@@ -198,7 +214,7 @@ class App:
         Starts an LLM streaming request, leading to audio output
         """
         if not self.chat_request_config:
-            AppUtil.send_ui_message(self.ui_message_queue, 
+            AppUtil.send_ui_message(self.ui_queue, 
                 LogUiMessage(f"{Color.ERROR}Chat config missing! Edit \"config.json\" and fix."))
             return
 
@@ -231,8 +247,12 @@ class App:
         time.sleep(0.1) # TODO revisit need for this
 
         segments = TextSegmenter.segment_full_message(user_input) 
-        self.audio_streamer.add_to_tts_queue(
-            texts=segments, is_assistant=False, voice_code=self.voice_code)
+        AppUtil.add_to_tts_queue(
+            tts_queue=self.tts_queue,
+            texts=segments, should_massage=False, voice_code=self.voice_code, 
+            has_message_start=True
+        )
+        AppUtil.add_to_tts_queue_end_item(tts_queue=self.tts_queue)
 
     # ---
 
@@ -252,27 +272,6 @@ class App:
         self.ui.log_control.add_block(message)
         self.ui.application.invalidate()
 
-    def update_gen_status(self, gen_status: GenStatus) -> None:
-        text, length, elapsed = gen_status
-        multi = f"({(length / elapsed):.1f}x)" if elapsed > 0 else ""
-
-        if text:
-            s = f"Generating audio\n"
-            s += Color.MEDIUM + Util.truncate_string(text, 50 - 1, ellipsize=True) + "\n"
-            elapsed_string = AppUtil.elapsed_string(elapsed)
-            s += f"length: {length:.2f}s elapsed: {elapsed_string} {multi}"
-        else:
-            s = ""
-        self.ui.gen_status_buffer.text = s # temp
-
-    def update_audio_status(self, info: str) -> None:
-        s = f"buffer {info}" if info else "buffer 0s"
-        s = " " * (50 - 1 - len(s)) + s
-        if not info:
-            s = Color.DARK + s
-        self.ui.audio_status_buffer.text = s
-        self.ui.application.invalidate() 
-
     def update_title(self) -> None:
         s = f"{Constants.APP_NAME} {Constants.VERSION} "
         s += "(chat mode)" if self.is_chat_mode else "(direct input mode)"
@@ -282,13 +281,14 @@ class App:
     def print_menu(self) -> None:
         s = ConstantsLong.MENU_TEXT
         s = ConstantsLong.MENU_TEXT.rstrip() + "\n\n"
-        s = s.replace("%1", f"(currently: {"on" if Shared.sync_text_to_audio else "off"})")
+        s = s.replace("%sync", f"(currently: {"on" if Shared.sync_text_to_audio else "off"})")
         if self.is_chat_mode:
             assert(self.chat_request_config)
             s += f"{Color.with_letter(Color.FEEDBACK, "i")}You are in \"chat mode\" The LLM will talk to you.\n"
             s += f"{Color.FEEDBACK_DARK}({self.chat_request_config.url})"
         else:
             s += f"{Color.FEEDBACK}You are in \"direct input mode\". Speech will be generated from your input."
+        s = s.replace("%save", f"(currently: {"on" if Shared.save_to_disk else "off"})")
         self.print_to_content(s)
 
     def print_status(self, text: str) -> None:
@@ -307,7 +307,7 @@ class App:
         
         self.llm_streamer_manager.abort()
         self.audio_streamer.clear_queues()
-        AppUtil.clear_queue(self.ui_message_queue)
+        AppUtil.clear_queue(self.ui_queue)
         Shared.synced_text_queue.clear()        
 
     async def ui_message_handler_loop(self):
@@ -316,9 +316,9 @@ class App:
         """
         while True:
             try:
-                ui_message = self.ui_message_queue.get(block=False) 
+                ui_message = self.ui_queue.get(block=False) 
                 self.print_ui_message(ui_message)
-                self.ui_message_queue.task_done()
+                self.ui_queue.task_done()
             except queue.Empty:
                 await asyncio.sleep(0.1) 
             except Exception as e:
@@ -335,7 +335,7 @@ class App:
         Prints to or updates one of the UI widgets or whatever based on ui_message's type 
         """
         if isinstance(m, PrintUiMessage):
-            self.print_to_content("xxx")
+            self.print_to_content(m.text)
         elif isinstance(m, StreamedPrintUiMessage):
             if not Shared.sync_text_to_audio: 
                 if Shared.clear_placeholder_flag:
@@ -353,9 +353,9 @@ class App:
         elif isinstance(m, LogUiMessage):
             self.print_to_log(m.text)
         elif isinstance(m, GenStatusUiMessage):
-            self.update_gen_status(m.item)
+            self.ui.update_gen_status(m.item)
         elif isinstance(m, AudioStatusUiMessage):
-            self.update_audio_status(m.text)
+            self.ui.update_audio_status(m.text)
         
     async def on_enter(self) -> None:
         user_input = self.ui.input_buffer.text
@@ -364,8 +364,8 @@ class App:
 
 # ---
 
-VOICE_CODES = OrpheusGen.AVAILABLE_VOICES.copy()
-VOICE_CODES.append("random")
+ORPHEUS_VOICE_CODES = Constants.ORPHEUS_VOICES.copy()
+ORPHEUS_VOICE_CODES.append("random")
 
 # ---
 

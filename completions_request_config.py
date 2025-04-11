@@ -3,7 +3,7 @@ import os
 import time
 from typing import Any
 
-class LlmRequestConfig:
+class CompletionsConfig:
     """
     Simple value object with network request settings for "completions" API
     """
@@ -33,14 +33,11 @@ class LlmRequestConfig:
 
         self.request_dict: dict[str, Any] = request_dict
 
-    def __str__(self):
-        return f"LlmRequestConfig - url: {self.url}, api_key: {self.api_key}, request_dict: {self.request_dict}"
-
     @staticmethod
-    def from_dict(d: dict) -> LlmRequestConfig:
+    def from_dict(d: dict) -> CompletionsConfig:
         """
-        Makes LlmRequestConfig instance from dict from json.
-        Example json:
+        Makes instance from json dict.
+        Example:
             {
                 "url": "https://openrouter.ai/api/v1/chat/completions",
                 "api_key": "my-api-key-1234",
@@ -61,7 +58,7 @@ class LlmRequestConfig:
         api_key = d.get("api_key", "")
         api_key_environment_variable = d.get("api_key_environment_variable", "")
         request_dict = d.get("request_dict", {})
-        return LlmRequestConfig(
+        return CompletionsConfig(
             url=url, 
             api_key=api_key, 
             api_key_environment_variable=api_key_environment_variable, 

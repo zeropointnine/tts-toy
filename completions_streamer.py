@@ -3,7 +3,7 @@ import queue
 import time
 import requests
 from l import L
-from llm_request_config import LlmRequestConfig
+from completions_request_config import CompletionsConfig
 from audio_streamer import AudioStreamer
 from app_types import *
 from app_util import AppUtil
@@ -11,25 +11,25 @@ from audio_streamer import AudioStreamer
 from text_massager import TextMassager
 from text_segmenter import TextSegmenter
 
-class LlmResponseStreamer:
+class CompletionsStreamer:
     """
     Makes OpenAI "completions" API call with streaming=True,
-    and hands of text segments to UI message queue and AudioStreamer as they come in.
+    and hands of text info to UI message queue and AudioStreamer as they come in.
     
-    Synchronous (blocks)
+    Is synchronous (blocks)
     """
 
     def __init__(
             self,
-            config: LlmRequestConfig, 
+            config: CompletionsConfig, 
             voice: str,
-            ui_message_queue: queue.Queue[UiMessage],
-            audio_streamer: AudioStreamer # TODO: 
+            ui_queue: queue.Queue[UiMessage],
+            tts_queue: queue.Queue[TtsItem]
     ):
         self.config = config
         self.voice: str = voice
-        self.ui_message_queue = ui_message_queue
-        self.audio_streamer = audio_streamer
+        self.ui_queue = ui_queue
+        self.tts_queue = tts_queue
 
         self.is_abort = False
 
@@ -54,6 +54,7 @@ class LlmResponseStreamer:
         start_time = time.time()
         text_segmenter = TextSegmenter()
 
+        is_first_segment = True
         is_success = False
         full_response_content = ""
 
@@ -120,13 +121,18 @@ class LlmResponseStreamer:
                     full_response_content += segment 
 
                     # Print to UI
-                    AppUtil.send_ui_message(self.ui_message_queue, StreamedPrintUiMessage(segment))
+                    AppUtil.send_ui_message(self.ui_queue, StreamedPrintUiMessage(segment))
 
                     # Check if we have enough text to generate audio sentences or phrases
                     segments = text_segmenter.add_text(segment)
                     if segments:
-                        self.audio_streamer.add_to_tts_queue(
-                            texts=segments, is_assistant=True, voice_code=self.voice)
+                        AppUtil.add_to_tts_queue(
+                            tts_queue=self.tts_queue,
+                            texts=segments, should_massage=True, voice_code=self.voice, 
+                            has_message_start=is_first_segment
+                        )
+                        if is_first_segment:
+                            is_first_segment = False
 
                 except Exception as e:
                     # Will continue to next chunk anyway
@@ -141,17 +147,22 @@ class LlmResponseStreamer:
             return "", ""
 
         if is_success:
-            # Add
+            # Add tts item
             remainder = text_segmenter.get_remaining_text()
             if remainder:
                 remainder = TextMassager.massage_assistant_text_segment_for_tts(remainder)
-                self.audio_streamer.add_to_tts_queue(
-                    texts=[remainder], is_assistant=True, voice_code=self.voice)
+                AppUtil.add_to_tts_queue(
+                    tts_queue=self.tts_queue,
+                    texts=[remainder], should_massage=True, voice_code=self.voice, 
+                    has_message_start=False
+                )
+            # Add special message-end item
+            AppUtil.add_to_tts_queue_end_item(self.tts_queue)
 
             # Log completion time for this specific stream.
             elapsed = time.time() - start_time
             elapsed = AppUtil.elapsed_string(elapsed)
-            AppUtil.send_ui_message(self.ui_message_queue, LogUiMessage(f"Chat response stream processed ({elapsed})"))
+            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"Chat response stream complete ({elapsed})"))
 
             # TODO minor retroactively trim the last printed text segment to remove trailing extra newline when that occurs (eg gemini flash lite)
 

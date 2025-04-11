@@ -10,13 +10,12 @@ import asyncio
 from app_types import *
 from app_util import AppUtil
 from color import Color
+from constants import Constants
 from l import L
-from llm_request_config import LlmRequestConfig
+from completions_request_config import CompletionsConfig
 from shared import Shared
 from text_massager import TextMassager
-
 AudioChunkQueue = queue.Queue[np.ndarray | bytes | None]
-
 
 class OrpheusGen:
     """
@@ -26,44 +25,40 @@ class OrpheusGen:
     https://github.com/isaiahbjork/orpheus-tts-local
     """
 
-    # Available voices in the Orpheus fined tuned model
-    AVAILABLE_VOICES = ["tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe"]
-    DEFAULT_VOICE = "tara"
 
     def __init__(
             self, 
             stop_event: threading.Event, 
-            ui_message_queue: queue.Queue[UiMessage],
+            ui_queue: queue.Queue[UiMessage],
             get_audio_queue_size: Callable[[], int]
     ):        
         self.stop_event = stop_event
-        self.ui_message_queue = ui_message_queue
+        self.ui_queue = ui_queue
         self.get_audio_queue_size = get_audio_queue_size
 
-    def audio_chunk_generator(self, request_config: LlmRequestConfig, tts_item: TtsItem):
+    def audio_chunk_generator(self, request_config: CompletionsConfig, tts_content_item: TtsContentItem):
         """
-        Generates TTS audio.
-        Does this by yielding chunks (np.ndarray, int16) 
-        via streamed completions service request as they become available.
+        Does the actual inference to generate the audio data.
+        Yields chunks of data via streamed completions service request as they become available.
         Checks stop_event to allow interruption.
         """
-                
-        if not tts_item.should_massage:
-            tts_text = tts_item.raw_text
+
+        if not tts_content_item.should_massage:
+            tts_text = tts_content_item.raw_text
         else:
-            tts_text = TextMassager.massage_assistant_text_segment_for_tts(tts_item.raw_text)
+            tts_text = TextMassager.massage_assistant_text_segment_for_tts(tts_content_item.raw_text)
             if not tts_text:
                 # Skip Orpheus gen of empty string or single char punctuation or else it goes nuts.
                 # Just send the text event to be displayed
                 from audio_streamer import AudioStreamer
-                synced_text_item = SyncedPrintItem(AudioStreamer.tick_num, tts_item.raw_text)
+                synced_text_item = SyncedTextItem(AudioStreamer.tick_num, tts_content_item.raw_text)
                 Shared.synced_text_queue.append(synced_text_item)
                 return
 
-        log_text = TextMassager.massage_display_text_segment_for_log(tts_item.raw_text)
+        log_text = TextMassager.massage_display_text_segment_for_log(tts_content_item.raw_text)
 
         gen_status = GenStatus(log_text, 0.0, 0.0)
-        AppUtil.send_ui_message(self.ui_message_queue, GenStatusUiMessage(gen_status))
+        AppUtil.send_ui_message(self.ui_queue, GenStatusUiMessage(gen_status))
 
         audio_chunk_queue = AudioChunkQueue()
 
@@ -72,7 +67,7 @@ class OrpheusGen:
         sync_token_gen = self.make_request_and_generate_tokens(
             request_config=request_config,
             prompt=tts_text,
-            voice=tts_item.voice
+            voice=tts_content_item.voice
         )
 
         async def async_token_gen_wrapper():
@@ -129,7 +124,7 @@ class OrpheusGen:
                     if self.is_first_chunk:
                         self.is_first_chunk = False
                         target_tick = AudioStreamer.tick_num + self.get_audio_queue_size()
-                        synced_text_item = SyncedPrintItem(target_tick, tts_item.raw_text)
+                        synced_text_item = SyncedTextItem(target_tick, tts_content_item.raw_text)
                         Shared.synced_text_queue.append(synced_text_item)
 
                     # Send UI status update
@@ -138,18 +133,18 @@ class OrpheusGen:
                         length = num_samples / SAMPLE_RATE
                         elapsed = time.time() - start_time
                         gen_status = GenStatus(log_text, length, elapsed)
-                        AppUtil.send_ui_message(self.ui_message_queue, GenStatusUiMessage(gen_status))
+                        AppUtil.send_ui_message(self.ui_queue, GenStatusUiMessage(gen_status))
 
             except Exception as e:
                 text = f"{Color.ERROR}Error in audio gen: {e}"
-                AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
+                AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
                 did_complete = False
                 # Optionally put an error sentinel onto the queue
 
             finally:
                 # Clear the gen status text
                 gen_status = GenStatus(log_text, 0.0, 0.0)
-                AppUtil.send_ui_message(self.ui_message_queue, GenStatusUiMessage(gen_status))
+                AppUtil.send_ui_message(self.ui_queue, GenStatusUiMessage(gen_status))
                 
                 # Send on-complete ui message
                 if did_complete:
@@ -158,7 +153,7 @@ class OrpheusGen:
                     multi = audio_length / elapsed
                     s = f"{Color.MEDIUM}{log_text}\n"
                     s += f"length: {audio_length:.2f}s elapsed: {elapsed:.2f}s ({multi:.1f}x)"
-                    AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(s))
+                    AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(s))
 
                 # Explicitly close the async generator
                 if decoder_gen and hasattr(decoder_gen, 'aclose'):
@@ -167,7 +162,7 @@ class OrpheusGen:
                         # printt("Tokens decoder closed.") # Optional debug
                     except Exception as e:
                         text = f"{Color.WARNING}Error closing tokens_decoder: {e}"
-                        AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
+                        AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
                 
                 # Explicitly close the async token generator wrapper
                 if token_gen and hasattr(token_gen, 'aclose'):
@@ -176,7 +171,7 @@ class OrpheusGen:
                         # printt("Token gen wrapper closed.") # Optional debug
                     except Exception as e:
                         text = f"{Color.WARNING}Error closing token_gen_wrapper: {e}"
-                        AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
+                        AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
 
                 # Sentinel to indicate completion
                 audio_chunk_queue.put(None)
@@ -252,13 +247,13 @@ class OrpheusGen:
 
     def make_request_and_generate_tokens(
             self,
-            request_config: LlmRequestConfig,
+            request_config: CompletionsConfig,
             prompt: str,
             voice: str
     ):
         """ Makes LLM completions request and generates Orpheus tokens by streaming the response. """
 
-        # TODO integrate this into LlmResponseStreamer
+        # TODO integrate LlmResponseStreamer into this, wd req some refac
 
         headers = { "Content-Type": "application/json" }
         json_data = request_config.request_dict.copy()
@@ -274,12 +269,12 @@ class OrpheusGen:
             )
         except Exception as e:
             text = f"{Color.ERROR}Orpheus service request failed: {e}"
-            AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
+            AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
             return
 
         if response.status_code != 200:
             text = f"{Color.ERROR}Orpheus service request failed: {response.status_code} - {response.text}"
-            AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
+            AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
             return
 
         # Process the streamed response
@@ -312,7 +307,7 @@ class OrpheusGen:
         
                 except json.JSONDecodeError as e:
                     text = f"{Color.ERROR}Error decoding API JSON response: {e}"
-                    AppUtil.send_ui_message(self.ui_message_queue,  LogUiMessage(text))
+                    AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
                     continue
 
     # ---
@@ -321,8 +316,8 @@ class OrpheusGen:
     @staticmethod
     def format_orpheus_prompt(prompt: str, voice: str) -> str:
 
-        if voice not in OrpheusGen.AVAILABLE_VOICES:
-            voice = OrpheusGen.DEFAULT_VOICE
+        if voice not in Constants.ORPHEUS_VOICES:
+            voice = Constants.ORPHEUS_VOICE_DEFAULT
 
         # Format similar to how engine_class.py does it with special tokens
         result = f"{voice}: {prompt}"
@@ -389,14 +384,14 @@ class OrpheusGen:
         return orpheus_convert_to_audio(multiframe, count)
 
     @staticmethod
-    def ping(request_config: LlmRequestConfig) -> str:
+    def ping(request_config: CompletionsConfig) -> str:
         """
         Pings server
         Returns error message on fail, else empty string
         """
         json_data = request_config.request_dict.copy()
         json_data["max_tokens"] = MAX_TOKENS
-        json_data["prompt"] = OrpheusGen.format_orpheus_prompt("hi", OrpheusGen.DEFAULT_VOICE)
+        json_data["prompt"] = OrpheusGen.format_orpheus_prompt("hi", Constants.ORPHEUS_VOICE_DEFAULT)
         headers = { "Content-Type": "application/json" }
         
         try:

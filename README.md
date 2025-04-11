@@ -60,9 +60,13 @@ Lastly, the inner `request_dict` object can be populated with properties which w
 
     python app.py
 
-Reminder here that Orpheus model inference + 'SNAC' decoding is not a lightweight task. Anecdotal datapoint: On my dev system (Ryzen 7700 + 3080Ti), audio generation using ta Q8 version of the model is only about 1.5x faster than real-time.
+Reminder here that Orpheus model inference + SNAC decoding is not a lightweight task. Anecdotally, my dev system (Ryzen 7700 + 3080Ti) does the audio generation only about 1.5x faster than real-time (using Q8 model).
 
 # Updates
+
+2025-04-11
+
+- Can now save audio output to disk. Toggle with `!sync`. This opens up some use cases.
 
 2025-04-09
 
@@ -74,7 +78,6 @@ Reminder here that Orpheus model inference + 'SNAC' decoding is not a lightweigh
 
 # Todo
 
-- Highlight audio segment currently being spoken in realtime?
-- Save generated audio output to disk? ...
+- Support for OuteAI? (Is not realtime though, probably needs separate project and different "interaction patterns", maybe just vanilla command line...)
 - Web service layer for audio generation?
 - Voice cloning?

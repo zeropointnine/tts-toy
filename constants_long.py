@@ -21,6 +21,7 @@ class ConstantsLong:
     * **<groan>:**  Use this to express pain, displeasure, frustration, or a strong dislike.  It's a negative reaction to something.
     * **<yawn>:** Use this to indicate boredom, sleepiness, or sometimes just a natural human reaction, especially in a longer conversation.
     * **<gasp>:** Use this to express surprise, shock, or being out of breath.  It's a sudden intake of breath due to a strong emotional or physical reaction.
+    * **<sniff>:** Use this to express derision, a sense of skepticism, mild exaspeeration, or as even as a way to convey you're about to change the subject.
 
     **How to use these tags effectively:**
 
@@ -71,10 +72,10 @@ voices:
     !random
 
 !stop or !s - stop audio output
-!regen or !r - regenerate the last audio message
-
 !clear - clear chat history 
-!sync - sync text to audio playback (toggle) %1
+
+!sync - sync text to audio playback (toggle) %sync
+!save - save audio output to disk (toggle) %save
 
 !help - this help text"""
 

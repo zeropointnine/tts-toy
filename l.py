@@ -26,7 +26,6 @@ class L:
             path = os.path.join(tempfile.gettempdir(), f"log.log")
         L.logger = logging.getLogger(name)
         logging.basicConfig(filename=path, encoding='utf-8', level=level)
-        L.i(f"=== [START] ===============")
 
     @staticmethod
     def d(message: str = "") -> None:

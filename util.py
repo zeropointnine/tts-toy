@@ -5,7 +5,7 @@ from typing import Callable
 class Util:
 
     @staticmethod
-    def truncate_string(s: str, length: int, ellipsize: bool=False) -> str:
+    def truncate_string(s: str, length: int, ellipsize: bool=True) -> str:
         s = s.strip()
         if len(s) < length:
             s = s
