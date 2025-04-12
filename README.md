@@ -66,7 +66,7 @@ Reminder here that Orpheus model inference + SNAC decoding is not a lightweight 
 
 2025-04-11
 
-- Can now save audio output to disk. Toggle with `!sync`. This opens up some use cases.
+- Can now save audio output to disk. Toggle with `!save`. This opens up some use cases.
 
 2025-04-09
 
@@ -78,6 +78,6 @@ Reminder here that Orpheus model inference + SNAC decoding is not a lightweight 
 
 # Todo
 
-- Support for OuteAI? (Is not realtime though, probably needs separate project and different "interaction patterns", maybe just vanilla command line...)
+- Support for OuteAI? (not realtime though, would need different "interaction patterns", maybe a separate project)
 - Web service layer for audio generation?
 - Voice cloning?
