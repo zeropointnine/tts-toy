@@ -9,7 +9,7 @@ from app_types import *
 from color import Color
 from constants import Constants
 from l import L
-from completions_request_config import CompletionsConfig
+from completions_config import CompletionsConfig
 from shared import Shared
 from util import Util
 
@@ -33,89 +33,19 @@ class AppUtil:
         L.i(f"=== [START] =============== log level: {level}")
         
     @staticmethod
-    def load_config_json() -> tuple:
-        """
-        Reads and sets the app configuration values.
-        Returns tuple of: 
-            user-facing error message, 
-            warning message,
-            orpheus request config | None,
-            chatbot request config | None
-        """
-
-        file_name = "config.json"
-        if socket.gethostname() == "mini" and True:
-            L.i("Loading *DEV* config")
-            file_name = "_other/config_dev.json"
-
-
-        error_prefix = f"There is a problem with the configuration file, \"{file_name}\"."
-        error_prefix += "\nPlease edit it to resolve the error and try again:\n\n"
-
-        try:
-            with open(file_name, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        except Exception as e:
-            return error_prefix + str(e), ""
-        
-        if not "orpheus_llm" in data:
-            return error_prefix + "Missing required json object \"orpheus_llm\"", ""
-
-        try:
-            orpheus_request_config = CompletionsConfig.from_dict( data["orpheus_llm"] )
-        except Exception as e: 
-            return (error_prefix + str(e), "", None, None)
-
-        # Is considered success at this point
-
-        if not "chatbot_llm" in data:
-            return (
-                "", 
-                "Missing object \"chatbot_llm\" in config.json. Chat functionality disabled.",
-                orpheus_request_config, 
-                None
-            )
-
-        try:
-            chat_request_config = CompletionsConfig.from_dict( data["chatbot_llm"] )
-        except Exception as e: 
-            return (
-                "", 
-                f"Error in \"chatbot_llm\" object in config.json. Chat functionality disabled. ({e})",
-                orpheus_request_config,
-                None
-            )
-
-        env_var_name = data["chatbot_llm"].get("api_key_environment_variable", "")
-        if env_var_name and not chat_request_config.api_key:
-            return (
-                "", 
-                f"Environment variable {env_var_name} as specified in the \"config.json\" file is empty or does not exist. Chat may not work.",
-                orpheus_request_config,
-                chat_request_config
-            )
-
-        return (
-            "", 
-            "",
-            orpheus_request_config,
-            chat_request_config
-        )
-
-    @staticmethod
-    def ping_orpheus_server_with_feedback(orpheus_request_config: CompletionsConfig, ui_queue: queue.Queue) -> None:
+    def ping_orpheus_server_with_feedback(orpheus_completions_config: CompletionsConfig, ui_queue: queue.Queue) -> None:
         from orpheus_gen import OrpheusGen
 
-        error_message = OrpheusGen.ping(orpheus_request_config)        
+        error_message = OrpheusGen.ping(orpheus_completions_config)        
         if error_message:
             AppUtil.send_ui_message(ui_queue, LogUiMessage(Color.ERROR + error_message))
 
-            content_error_message = f"{Color.ERROR}Orpheus server at {orpheus_request_config.url} may not be online.\n"
+            content_error_message = f"{Color.ERROR}Orpheus server at {orpheus_completions_config.url} may not be online.\n"
             content_error_message += f"{Color.ERROR}Check config.json file."
             AppUtil.send_ui_message(ui_queue, PrintUiMessage(content_error_message))
         else:
             AppUtil.send_ui_message(
-                ui_queue, LogUiMessage(f"Orpheus server is online\n{orpheus_request_config.url}"))
+                ui_queue, LogUiMessage(f"Orpheus server is online\n{orpheus_completions_config.url}"))
 
     @staticmethod
     def import_decoder_with_feedback(ui_queue: queue.Queue) -> None:

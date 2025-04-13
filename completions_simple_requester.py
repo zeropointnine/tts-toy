@@ -1,6 +1,7 @@
 import aiohttp
 import asyncio
-from completions_request_config import CompletionsConfig
+from completions_config import CompletionsConfig
+from l import L
 
 class CompletionsSimpleRequester:
     """

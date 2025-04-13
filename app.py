@@ -9,11 +9,11 @@ from app_util import AppUtil
 from constants import Constants
 from l import L
 from color import Color
-from completions_request_config import CompletionsConfig
+from completions_config import CompletionsConfig
 from completions_manager import CompletionsManager
+from prefs import Prefs
 from shared import Shared
 from text_segmenter import TextSegmenter
-from orpheus_gen import OrpheusGen
 from text_massager import TextMassager
 from app_types import *
 from ui import Ui
@@ -31,36 +31,33 @@ class App:
 
         AppUtil.init_logging()
 
-        tup = AppUtil.load_config_json()
-        error_message = tup[0]
-        warning_message = tup[1]
-        self.orpheus_request_config: CompletionsConfig = tup[2]
-        self.chat_request_config: CompletionsConfig | None = tup[3]
-
-        if error_message:
-            print("\n" + error_message)
-            exit(1)                  
-
         self.stop_audio_event = threading.Event()
         self.ui_queue = queue.Queue[UiMessage]()
         self.tts_queue = queue.Queue[TtsItem]()
         
+        fatal_error_message, warning_message = Prefs().init(self.ui_queue)
+        if fatal_error_message:
+            print("\n" + fatal_error_message)
+            exit(1)                  
+
         self.audio_streamer = AudioStreamer(
             stop_event=self.stop_audio_event, 
             tts_queue=self.tts_queue,
             ui_queue=self.ui_queue,
-            completions_config=self.orpheus_request_config
+            completions_config=Prefs().orpheus_completions_config
         ) 
 
+        with open(Constants.SYSTEM_PROMPT_FILE_PATH, 'r') as f:
+            system_prompt = f.read() # don't catch exception
+        if not system_prompt:
+            raise Exception("System prompt is empty")
+
         self.llm_streamer_manager = CompletionsManager(
-            config=cast(CompletionsConfig, self.chat_request_config), 
-            system_prompt=ConstantsLong.SYSTEM_PROMPT, 
+            config=cast(CompletionsConfig, Prefs().chat_completions_config), 
+            system_prompt=system_prompt, 
             tts_queue=self.tts_queue,
             ui_queue=self.ui_queue
         )
-
-        self.voice_code = "leah" 
-        self.is_chat_mode = bool(self.chat_request_config) and not bool(warning_message)
 
         self.ui = Ui(self.on_enter)
 
@@ -74,9 +71,9 @@ class App:
             AppUtil.send_ui_message(self.ui_queue, LogUiMessage(Color.WARNING + warning_message))
 
         def go():
-            AppUtil.ping_orpheus_server_with_feedback(self.orpheus_request_config, self.ui_queue)
+            AppUtil.ping_orpheus_server_with_feedback(Prefs().orpheus_completions_config, self.ui_queue)
             AppUtil.import_decoder_with_feedback(self.ui_queue)
-        Util.run_in_thread(go, 0.5) # allows app to startup faster
+        Util.run_in_thread(go, 0.5) # allows app to show UI before doing heavy load
 
     async def run(self):
 
@@ -105,7 +102,7 @@ class App:
             await self.process_command(command)
             return
         
-        if self.is_chat_mode:
+        if Prefs().ix_mode == "chat":
             await self.do_chat_request_plus(user_input)
         else:
             await self.play_direct_mode_text(user_input)
@@ -114,22 +111,22 @@ class App:
         """
         Processes a "command" and prints feedback in content area. 
         """
-        was_chat_mode = self.is_chat_mode
-        was_voice_code = self.voice_code
+        was_chat_mode = Prefs().ix_mode
+        was_voice_code = Prefs().voice_code
         feedback = ""
         should_print_menu = False
 
         match command:
 
-            case value if value in ORPHEUS_VOICE_CODES:
-                self.voice_code = command
-                if self.voice_code == "random":
+            case value if value in Constants.ORPHEUS_VOICE_CODES:
+                Prefs().voice_code = command
+                if Prefs().voice_code == "random":
                     feedback = "Changed voice to: Random voice per generated audio segment"
                 else:
-                    feedback = f"Changed voice to: {self.voice_code}"
+                    feedback = f"Changed voice to: {Prefs().voice_code}"
             
             case "clear":
-                if self.is_chat_mode:
+                if Prefs().ix_mode == "chat":
                     self.llm_streamer_manager.init_history()
                     feedback = "Cleared chat history"
                     self.print_stroke_flag = True
@@ -146,42 +143,42 @@ class App:
                     feedback =  "Stopped audio "
 
             case value if value in ["direct", "d"]:
-                if self.is_chat_mode:
+                if Prefs().ix_mode != "direct":
                     await self.stop_all()
-                    self.is_chat_mode = False
+                    Prefs().ix_mode = "direct"
                     feedback = "Switched to \"direct input mode\""
                     self.print_stroke_flag = True
                 else:
                     feedback = "Already in \"direct input mode\""
 
             case value if value in ["chat", "c"]:
-                if not self.is_chat_mode:
-                    if not self.chat_request_config:
-                        feedback = "Can't. Chat mode is disabled (Edit \"config.json\")."
+                if Prefs().ix_mode != "chat":
+                    if not Prefs().chat_completions_config:
+                        feedback = f"Can't. Chat mode is disabled (Edit \"{Constants.CONFIG_JSON_FILE_PATH}\")."
                     else:
-                        self.is_chat_mode = True
-                        feedback = f"Switched to \"chat mode\" ({self.chat_request_config.url})"
+                        Prefs().ix_mode = "chat"
+                        feedback = f"Switched to \"chat mode\" ({Prefs().chat_completions_config.url})" # type: ignore
                         self.print_stroke_flag = True
                 else:
                     feedback = "Already in chat mode"
 
             case "sync":
-                Shared.sync_text_to_audio = not Shared.sync_text_to_audio
+                Prefs().sync_text_to_audio = not Prefs().sync_text_to_audio
                 feedback = "\"Sync text to audio playback\" set to: "
-                feedback += "On" if Shared.sync_text_to_audio else "Off"
+                feedback += "On" if Prefs().sync_text_to_audio else "Off"
 
             case "save":
-                if Shared.save_to_disk:
-                    Shared.save_to_disk = False
+                if Prefs().save_audio_to_disk:
+                    Prefs().save_audio_to_disk = False
                     feedback = "\"Save audio output to disk\" set to: Off"
                 else:
                     try:
-                        os.makedirs(Shared.save_dir, exist_ok=True)
+                        os.makedirs(Prefs().audio_save_dir, exist_ok=True)
                         feedback = "\"Save audio output to disk\" set to: On"
-                        feedback += f"\n{Color.with_letter(Color.FEEDBACK_DARK, "i")}{Shared.save_dir}"
-                        Shared.save_to_disk = True
+                        feedback += f"\n{Color.with_code(Color.FEEDBACK_DARK, "i")}{Prefs().audio_save_dir}"
+                        Prefs().save_audio_to_disk = True
                     except Exception as e:
-                        feedback = f"Problem with output directory {Shared.save_dir}: {e}"
+                        feedback = f"Problem with output directory {Prefs().audio_save_dir}: {e}"
 
             case value if value in ["help", "h", "menu"]:
                 should_print_menu = True
@@ -198,14 +195,14 @@ class App:
             await self.stop_all() 
 
         if feedback:
-            self.print_to_content(f"{Color.with_letter(Color.FEEDBACK, "i")}{feedback}")
+            self.print_to_content(f"{Color.with_code(Color.FEEDBACK, "i")}{feedback}")
 
         if should_print_menu:
             self.print_stroke_flag = True
             self.print_menu()
             self.print_stroke_flag = True
 
-        title_dirty = self.is_chat_mode != was_chat_mode or self.voice_code != was_voice_code
+        title_dirty = Prefs().ix_mode != was_chat_mode or Prefs().voice_code != was_voice_code
         if title_dirty:
             self.update_title()
 
@@ -213,9 +210,9 @@ class App:
         """
         Starts an LLM streaming request, leading to audio output
         """
-        if not self.chat_request_config:
+        if not Prefs().chat_completions_config:
             AppUtil.send_ui_message(self.ui_queue, 
-                LogUiMessage(f"{Color.ERROR}Chat config missing! Edit \"config.json\" and fix."))
+                LogUiMessage(f"{Color.ERROR}Chat config missing! Edit \"{Constants.CONFIG_JSON_FILE_PATH}\" and fix."))
             return
 
         await self.stop_all()
@@ -224,19 +221,19 @@ class App:
         self.print_to_content(print_text) 
 
         # Add the initial block for the assistant's response
-        placeholder_text = f"{Color.with_letter(Color.DARKEST, "i")}Sending request..."
+        placeholder_text = f"{Color.with_code(Color.DARKEST, "i")}Sending request..."
         self.print_to_content(placeholder_text)
         Shared.clear_placeholder_flag = True
 
         # Make the streaming request
-        self.llm_streamer_manager.make_request(user_input, self.voice_code, False)
+        self.llm_streamer_manager.make_request(user_input, Prefs().voice_code, False)
         
     async def play_direct_mode_text(self, user_input: str) -> None: 
                 
         user_input = TextMassager.transform_direct_mode_input_dev(user_input)
         
-        if Shared.sync_text_to_audio:
-            placeholder_text = f"{Color.with_letter(Color.DARKEST, "i")}Starting..."
+        if Prefs().sync_text_to_audio:
+            placeholder_text = f"{Color.with_code(Color.DARKEST, "i")}Starting..."
             self.print_to_content(placeholder_text)
             Shared.clear_placeholder_flag = True
         else:
@@ -249,7 +246,7 @@ class App:
         segments = TextSegmenter.segment_full_message(user_input) 
         AppUtil.add_to_tts_queue(
             tts_queue=self.tts_queue,
-            texts=segments, should_massage=False, voice_code=self.voice_code, 
+            texts=segments, should_massage=False, voice_code=Prefs().voice_code, 
             has_message_start=True
         )
         AppUtil.add_to_tts_queue_end_item(tts_queue=self.tts_queue)
@@ -274,21 +271,22 @@ class App:
 
     def update_title(self) -> None:
         s = f"{Constants.APP_NAME} {Constants.VERSION} "
-        s += "(chat mode)" if self.is_chat_mode else "(direct input mode)"
-        s += f" (voice: {self.voice_code})"
+        s += "(chat mode)" if Prefs().ix_mode == "chat" else "(direct input mode)"
+        s += f" (voice: {Prefs().voice_code})"
         self.ui.title_buffer.text = s
 
     def print_menu(self) -> None:
         s = ConstantsLong.MENU_TEXT
         s = ConstantsLong.MENU_TEXT.rstrip() + "\n\n"
-        s = s.replace("%sync", f"(currently: {"on" if Shared.sync_text_to_audio else "off"})")
-        if self.is_chat_mode:
-            assert(self.chat_request_config)
-            s += f"{Color.with_letter(Color.FEEDBACK, "i")}You are in \"chat mode\" The LLM will talk to you.\n"
-            s += f"{Color.FEEDBACK_DARK}({self.chat_request_config.url})"
+        s = s.replace("%sync", f"(currently: {"on" if Prefs().sync_text_to_audio else "off"})")
+        if Prefs().ix_mode == "chat":
+            assert(Prefs().chat_completions_config)
+            s += f"{Color.with_code(Color.FEEDBACK, "i")}You are in \"chat mode.\" The LLM will talk to you."
+            s += f"\n{Color.FEEDBACK_DARK}({Prefs().chat_completions_config.url})" # type: ignore
         else:
-            s += f"{Color.FEEDBACK}You are in \"direct input mode\". Speech will be generated from your input."
-        s = s.replace("%save", f"(currently: {"on" if Shared.save_to_disk else "off"})")
+            s += f"{Color.with_code(Color.FEEDBACK, "i")}You are in \"direct input mode.\"" 
+            s += f"\n{Color.with_code(Color.FEEDBACK, "i")}Speech will be generated from your input."
+        s = s.replace("%save", f"(currently: {"on" if Prefs().save_audio_to_disk else "off"})")
         self.print_to_content(s)
 
     def print_status(self, text: str) -> None:
@@ -337,14 +335,14 @@ class App:
         if isinstance(m, PrintUiMessage):
             self.print_to_content(m.text)
         elif isinstance(m, StreamedPrintUiMessage):
-            if not Shared.sync_text_to_audio: 
+            if not Prefs().sync_text_to_audio: 
                 if Shared.clear_placeholder_flag:
                     self.ui.content_control.replace_last_block(m.text)
                 else:
                     self.ui.content_control.append_to_last_block(m.text)
                 Shared.clear_placeholder_flag = False            
         elif isinstance(m, SyncedPrintUiMessage):
-            if Shared.sync_text_to_audio:
+            if Prefs().sync_text_to_audio:
                 if Shared.clear_placeholder_flag:
                     self.ui.content_control.replace_last_block(m.item.display_text)
                 else:
@@ -361,11 +359,6 @@ class App:
         user_input = self.ui.input_buffer.text
         self.ui.input_buffer.reset()
         await self.process_user_input(user_input)
-
-# ---
-
-ORPHEUS_VOICE_CODES = Constants.ORPHEUS_VOICES.copy()
-ORPHEUS_VOICE_CODES.append("random")
 
 # ---
 

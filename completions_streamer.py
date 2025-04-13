@@ -3,11 +3,9 @@ import queue
 import time
 import requests
 from l import L
-from completions_request_config import CompletionsConfig
-from audio_streamer import AudioStreamer
+from completions_config import CompletionsConfig
 from app_types import *
 from app_util import AppUtil
-from audio_streamer import AudioStreamer
 from text_massager import TextMassager
 from text_segmenter import TextSegmenter
 

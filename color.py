@@ -31,7 +31,7 @@ class Color:
         return "#" + color_token # yes rly
     
     @staticmethod
-    def with_letter(color_token: str, letter: str) -> str:
+    def with_code(color_token: str, letter: str) -> str:
         color_token = color_token.rstrip("]")
         color_token += f"+{letter}]" # yes rly
         return color_token

@@ -12,7 +12,7 @@ from app_util import AppUtil
 from color import Color
 from constants import Constants
 from l import L
-from completions_request_config import CompletionsConfig
+from completions_config import CompletionsConfig
 from shared import Shared
 from text_massager import TextMassager
 AudioChunkQueue = queue.Queue[np.ndarray | bytes | None]

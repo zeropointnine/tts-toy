@@ -9,6 +9,7 @@ from app_util import AppUtil
 from color import Color
 from constants import Constants
 from l import L
+from prefs import Prefs
 from shared import Shared
 from text_massager import TextMassager
 from util import Util
@@ -49,7 +50,7 @@ class SaveWavUtil:
         fn = fn.rstrip(".")
         fn += ".wav"
 
-        file_path = os.path.join(Shared.save_dir, fn)        
+        file_path = os.path.join(Prefs().audio_save_dir, fn)        
         return file_path
 
     @staticmethod

@@ -7,11 +7,12 @@ from threading import Thread
 from app_types import *
 from color import Color
 from l import L
-from completions_request_config import CompletionsConfig
+from completions_config import CompletionsConfig
 from orpheus_gen import OrpheusGen
 import queue
 import threading
 from app_util import AppUtil
+from prefs import Prefs
 from save_wav_util import SaveWavUtil
 from shared import Shared
 
@@ -39,7 +40,7 @@ class AudioStreamer:
         self.stop_event = stop_event
         self.ui_queue = ui_queue
         self.tts_queue = tts_queue
-        self.orpheus_request_config = completions_config
+        self.orpheus_completions_config = completions_config
         
         self.orpheus_gen = OrpheusGen(
             stop_event=self.stop_event, 
@@ -222,7 +223,7 @@ class AudioStreamer:
 
                 tts_content_item = cast(TtsContentItem, tts_item)
 
-                if tts_content_item.is_message_start and Shared.save_to_disk:
+                if tts_content_item.is_message_start and Prefs().save_audio_to_disk:
                     # Init sound file item 
                     if sound_file_item:
                         L.w("SoundFileItem already exists, check logic")
@@ -234,7 +235,7 @@ class AudioStreamer:
 
                 # Do orpheus inference. Blocks
                 audio_data = self.orpheus_gen.audio_chunk_generator(
-                    request_config=self.orpheus_request_config, tts_content_item = tts_content_item)
+                    request_config=self.orpheus_completions_config, tts_content_item = tts_content_item)
 
                 # Feed the audio queue. Blocks.
                 self.queue_feeder(audio_data, self.stop_event, sound_file_item) 

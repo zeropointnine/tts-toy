@@ -12,7 +12,8 @@ class WordWrapControl(BufferControl):
     Provides a limited API through which its content should be manipulated
     (Client shd not touch its buffer).
 
-    Also, "paragraphs" can be colored by prepending "[RRGGBB]"
+    "Paragraphs" can be colored by prepending "[RRGGBB]" 
+    or "[RRGGBB+x]" (where "x" is a one-letter style code)
     """
 
     def __init__(self, width_offset = 0, *args, **kwargs):
@@ -177,10 +178,11 @@ class TextModel:
 
     @staticmethod
     def get_style_and_text(paragraph: str) -> tuple[str, str]:
+        
         """
         Optionally expects a special token at beginning of string, 
         which is transformed into a prompt-toolkit style.
-        Format is either "[RRGGBB]" or "[RRGGBB+a]", where "a" is a one-letter code.
+        Format is either "[RRGGBB]" or "[RRGGBB+x]", where "x" is a one-letter code.
         Returns tuple of style and string, stripped of the special token.
         """
         match = re.match(r'^\[([0-9a-fA-F]{6})\]', paragraph)
@@ -188,18 +190,22 @@ class TextModel:
             hex_color = match.group(1)  # The captured hex value
             remaining_string = paragraph[len(match.group(0)):]
             return f"fg: #{hex_color}", remaining_string
-        # Match "[RRGGBB+a]" (or other single letter codes)
-        match_complex = re.match(r'^\[([0-9a-fA-F]{6})\+([a-zA-Z])\]', paragraph)
-        if match_complex:
-            hex_color = match_complex.group(1)
-            style_code = match_complex.group(2)
-            remaining_string = paragraph[len(match_complex.group(0)):]
+        
+        # Match "[RRGGBB+x]" (or other single letter codes)
+        match = re.match(r'^\[([0-9a-fA-F]{6})\+([a-zA-Z])\]', paragraph)
+        if match:
+            
+            hex_color = match.group(1)
+            style_code = match.group(2)
+            remaining_string = paragraph[len(match.group(0)):]
+            
             # Map style codes to prompt-toolkit styles (example: 'i' for italic)
             # Add more mappings here if needed for other codes (e.g., 'b' for bold, 'u' for underline)
             style_attrs = []
             if style_code == 'i':
                 style_attrs.append("italic")
-            # Add other conditions for other codes like 'b', 'u' etc.
+            elif style_code == "b":
+                style_attrs.append("bold")
 
             style_string = f"fg: #{hex_color}"
             if style_attrs:
