@@ -1,4 +1,4 @@
-from typing import Callable, cast
+from typing import Callable
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.layout.containers import HSplit, Window, VSplit
@@ -10,31 +10,30 @@ from prompt_toolkit.styles import Style
 from app_util import AppUtil
 from color import Color
 from app_types import *
-from hex_color_processor import HexColorProcessor
+from l import L # type: ignore
+from main_control import MainControl
+from main_control_parser import MainControlParser
 from util import Util
-from word_wrap_control import WordWrapControl
 
 class Ui:
     """
     Mostly just a simple holder for prompt-toolkit UI objects
     """
 
-    def __init__(self, 
-        on_enter: Callable
-    ):
+    def __init__(self, on_enter: Callable):
         self.on_enter = on_enter
 
         self.title_buffer = Buffer()
         self.title_control = FormattedTextControl(lambda: self.title_buffer.text)
 
-        self.audio_status_buffer = Buffer()
-        self.audio_status_control = BufferControl(self.audio_status_buffer, focusable=False, input_processors=[HexColorProcessor()])
+        self.audio_status_text = AppUtil.make_empty_line()
+        self.audio_status_control = FormattedTextControl(lambda: self.audio_status_text)
 
-        self.content_control = WordWrapControl(focusable=True)
-        self.log_control = WordWrapControl(width_offset=-1)
+        self.content_control = MainControl("light", False)
+        self.log_control = MainControl("dark", True)
 
-        self.gen_status_buffer = Buffer()
-        self.gen_status_control = BufferControl(self.gen_status_buffer, focusable=False, input_processors=[HexColorProcessor()])
+        self.gen_status_text = AppUtil.make_empty_line()
+        self.gen_status_control = FormattedTextControl(lambda: self.gen_status_text)
 
         self.input_buffer = Buffer()
         self.input_control = BufferControl(buffer=self.input_buffer)
@@ -52,9 +51,9 @@ class Ui:
             
             # Main area 
             VSplit([
-                Window(content=self.content_control, wrap_lines=False, style="class:content"),
+                Window(content=self.content_control, style="class:content"),
                 VerticalLine(),
-                Window(content=self.log_control, width=50, wrap_lines=True, style="class:log"), 
+                Window(content=self.log_control, width=50, style="class:log"), 
             ], padding=1),
             
             HorizontalLine(),
@@ -66,25 +65,25 @@ class Ui:
                 Window(content=self.gen_status_control, height=3, width=50, wrap_lines=False, style="class:gen_status")
             ], padding=1)
 
-        ], style=f"bg:{Color.hex(Color.BG)}")
+        ], style=f"bg:{Color.hex('bg')}")
 
         layout = Layout(root_container, focused_element=self.input_control)
 
         kb = KeyBindings()
 
         style = Style.from_dict({
-            "title": f"{Color.hex(Color.DARK)}",
-            "audio_status": f"{Color.hex(Color.LIGHT)}",
+            "title": f"{Color.hex('dark')}",
+            "audio_status": f"{Color.hex('light')}",
 
-            "content": f"{Color.hex(Color.ASSISTANT)}",
-            "log": f"{Color.hex(Color.DARK)}",
+            "content": f"{Color.hex('assistant')}",
+            "log": f"{Color.hex('dark')}",
             
-            "gen_status": f"{Color.hex(Color.DARK)}",
-            "input": f"{Color.hex(Color.INPUT)}",
+            "gen_status": f"{Color.hex('dark')}",
+            "input": f"{Color.hex('input')}",
 
             "scrollbar": "bg:#444444 #ff0000",
 
-            "line": f"{Color.hex(Color.DARK)}"
+            "line": f"{Color.hex('dark')}"
         })
 
         self.application = Application(
@@ -104,24 +103,27 @@ class Ui:
         async def _(_): 
             await self.on_enter()
 
-    def update_audio_status(self, info: str) -> None:
-        
-        s = f"buffer {info}" if info else "buffer 0s"
-        s = " " * (50 - 1 - len(s)) + s
-        if not info:
-            s = Color.DARK + s
-        self.audio_status_buffer.text = s
-        self.application.invalidate() 
+    def update_audio_status(self, seconds: float) -> None:        
+        self.audio_status_text = str(seconds)
+        s = "buffer: "
+        s += f"{seconds:.1f}s" if seconds > 0 else "0s"
+        color_name = "light" if seconds > 0 else "dark"
+        style = Color.as_pt_style(color_name)
+        self.audio_status_text = [ (style, s) ]
+        self.application.invalidate() # TODO unnecessarily costly? not sure; alternatives?
 
     def update_gen_status(self, gen_status: GenStatus) -> None:
-        
+        WIDTH = 50 - 1
         text, length, elapsed = gen_status
-
-        s = ""
-        if elapsed:
-            s = f"Generating audio\n"
-            s += Color.MEDIUM + Util.truncate_string(text, 50 - 1, ellipsize=True) + "\n"
+        if elapsed == 0.0:
+            value = ""
+        else:
             elapsed_string = AppUtil.elapsed_string(elapsed)
             multiplier = f"({(length / elapsed):.1f}x)" if elapsed > 0 else ""
-            s += f"length: {length:.2f}s elapsed: {elapsed_string} {multiplier}"
-        self.gen_status_buffer.text = s 
+            s = f"[dark+i]Generating\n"
+            s += "[medium]" + Util.truncate_string(text, WIDTH, ellipsize=True) + "\n"
+            s += f"[dark]length: {length:.2f}s elapsed: {elapsed_string} {multiplier}"
+            value = MainControlParser.transform(s, 999, "dark")
+            value = value[0]
+        self.gen_status_text = value
+        self.application.invalidate()

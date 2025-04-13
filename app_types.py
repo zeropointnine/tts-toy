@@ -1,9 +1,17 @@
 from __future__ import annotations
 from typing import NamedTuple
 import numpy as np
-from numpy.typing import NDArray, ArrayLike
 
 from util import Util
+
+
+# Alias for a pt style-and-text tuple
+StyleText = tuple[str, str]
+
+# Represents a single line of styled text (ie, w/ no line breaks)
+# Is an alias for a list of pt style-and-text tuples
+Line = list[StyleText]
+
 
 class UiMessage:
     """ 
@@ -32,9 +40,9 @@ class GenStatusUiMessage(UiMessage):
     def __init__(self, item):
         self.item = item
 
-class AudioStatusUiMessage(UiMessage):
-    def __init__(self, text: str):
-        self.text = text
+class AudioBufferUiMessage(UiMessage):
+    def __init__(self, seconds: float):
+        self.seconds = seconds
 
 # ---
 
@@ -69,7 +77,7 @@ class TtsContentItem(TtsItem):
         """ Is the first text segment of a full message """
 
     def __str__(self) -> str:
-        return f"<TtsContentItem - text: [{ Util.truncate_string(self.raw_text, 15) }], is_message_start: { self.is_message_start }>"
+        return f"<TtsContentItem - text: [{ Util.truncate_string(self.raw_text, 100) }], is_message_start: { self.is_message_start }>"
 
 class TtsEndItem(TtsItem):
     """

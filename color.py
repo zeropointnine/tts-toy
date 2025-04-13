@@ -1,37 +1,49 @@
+from l import L
+
 class Color:
 
-    # Colors by color value
-    LIGHT = "[cccccc]"
-    MEDIUM = "[777777]"
-    DARK = "[555555]"
-    DARKEST = "[333333]"
-    BG = "[222222]"
+    NAME_TO_COLOR = {
+        "white": "#ffffff",
+        "title": "#ffffff",
 
-    RED = "[ff0000]"
-    ORANGE ="[ff8800]"
-    BLUE = "[0088ff]"
-    GREEN = "[66aa66]"
-    GREEN_DARK = "[336633]"
-    MAGENTA = "[ffff00]"
+        "light": "#cccccc",
+        "assistant": "#cccccc",
 
-    # Colors by UI type
-    ERROR = RED
-    WARNING = ORANGE
-    INPUT = BLUE
-    FEEDBACK = GREEN
-    FEEDBACK_DARK = GREEN_DARK
-    ASSISTANT = LIGHT
+        "medium": "#777777",
 
-    ACCENT = MAGENTA
+        "dark": "#555555",
+        "log": "#555555",
+
+        "darkest": "#333333",
+
+        "bg": "#222222",
+
+        "blue": "#0088ff",
+        "input": "#0088ff",
+
+        "green": "#66aa66",
+        "feedback": "#66aa66",
+
+        "green_dark": "#336633",
+        "feedback_dark": "#336633",
+
+        "red": "#ff0000",
+        "error": "#ff0000",
+
+        "orange": "#ff8800",
+        "warning": "#ff8800"
+    }
+
+    NAMES = NAME_TO_COLOR.keys()
 
     @staticmethod
-    def hex(color_token: str) -> str:
-        color_token = color_token.lstrip("[")
-        color_token = color_token.rstrip("]")
-        return "#" + color_token # yes rly
+    def hex(name: str) -> str:
+        s = Color.NAME_TO_COLOR.get(name, "")
+        if not s:
+            L.w(f"Bad name: {name}")
+            s = Color.NAME_TO_COLOR["white"]
+        return s
     
     @staticmethod
-    def with_code(color_token: str, letter: str) -> str:
-        color_token = color_token.rstrip("]")
-        color_token += f"+{letter}]" # yes rly
-        return color_token
+    def as_pt_style(name: str) -> str:
+        return "fg: " + Color.hex(name)

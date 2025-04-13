@@ -2,8 +2,7 @@ import queue
 import threading
 from app_types import *
 from app_util import AppUtil
-from color import Color
-from l import L
+from l import L # type: ignore
 from completions_config import CompletionsConfig
 from completions_streamer import CompletionsStreamer
 
@@ -72,7 +71,7 @@ class CompletionsManager:
                 self.history.append(("assistant", content))
 
             if error_message:
-                AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"{Color.ERROR}{error_message}"))
+                AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"[error]{error_message}"))
 
         self.thread = threading.Thread(target=go, daemon=True)
         self.thread.start()

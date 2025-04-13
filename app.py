@@ -3,12 +3,10 @@ import threading
 import asyncio
 import queue
 import time
-import traceback
 from typing import cast
 from app_util import AppUtil
 from constants import Constants
-from l import L
-from color import Color
+from l import L # type: ignore
 from completions_config import CompletionsConfig
 from completions_manager import CompletionsManager
 from prefs import Prefs
@@ -68,7 +66,7 @@ class App:
         self.print_stroke_flag: bool = True
 
         if warning_message:
-            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(Color.WARNING + warning_message))
+            AppUtil.send_ui_message(self.ui_queue, LogUiMessage("[warning]" + warning_message))
 
         def go():
             AppUtil.ping_orpheus_server_with_feedback(Prefs().orpheus_completions_config, self.ui_queue)
@@ -77,14 +75,14 @@ class App:
 
     async def run(self):
 
-        _ = asyncio.create_task(self.ui_message_handler_loop())
+        _ = asyncio.create_task(self.ui_message_queue_loop())
 
         try:
             await self.ui.application.run_async()
         except Exception as e:
             AppUtil.send_ui_message(
                 self.ui_queue, 
-                LogUiMessage(f"{Color.ERROR}Unexpected error. Could be bad. Consider restart.\n{e}") 
+                LogUiMessage(f"[error]Unexpected error. Could be bad. Consider restart.\n{e}") 
             )
         finally:
             pass
@@ -175,7 +173,7 @@ class App:
                     try:
                         os.makedirs(Prefs().audio_save_dir, exist_ok=True)
                         feedback = "\"Save audio output to disk\" set to: On"
-                        feedback += f"\n{Color.with_code(Color.FEEDBACK_DARK, "i")}{Prefs().audio_save_dir}"
+                        feedback += f"\n[feedback_dark+i]{Prefs().audio_save_dir}"
                         Prefs().save_audio_to_disk = True
                     except Exception as e:
                         feedback = f"Problem with output directory {Prefs().audio_save_dir}: {e}"
@@ -195,7 +193,7 @@ class App:
             await self.stop_all() 
 
         if feedback:
-            self.print_to_content(f"{Color.with_code(Color.FEEDBACK, "i")}{feedback}")
+            self.print_to_content(f"[feedback+i]{feedback}")
 
         if should_print_menu:
             self.print_stroke_flag = True
@@ -212,7 +210,7 @@ class App:
         """
         if not Prefs().chat_completions_config:
             AppUtil.send_ui_message(self.ui_queue, 
-                LogUiMessage(f"{Color.ERROR}Chat config missing! Edit \"{Constants.CONFIG_JSON_FILE_PATH}\" and fix."))
+                LogUiMessage(f"[error]Chat config missing! Edit \"{Constants.CONFIG_JSON_FILE_PATH}\" and fix."))
             return
 
         await self.stop_all()
@@ -221,7 +219,7 @@ class App:
         self.print_to_content(print_text) 
 
         # Add the initial block for the assistant's response
-        placeholder_text = f"{Color.with_code(Color.DARKEST, "i")}Sending request..."
+        placeholder_text = f"[dark+i]Sending request..."
         self.print_to_content(placeholder_text)
         Shared.clear_placeholder_flag = True
 
@@ -233,7 +231,7 @@ class App:
         user_input = TextMassager.transform_direct_mode_input_dev(user_input)
         
         if Prefs().sync_text_to_audio:
-            placeholder_text = f"{Color.with_code(Color.DARKEST, "i")}Starting..."
+            placeholder_text = f"[dark+i]Starting..."
             self.print_to_content(placeholder_text)
             Shared.clear_placeholder_flag = True
         else:
@@ -246,7 +244,7 @@ class App:
         segments = TextSegmenter.segment_full_message(user_input) 
         AppUtil.add_to_tts_queue(
             tts_queue=self.tts_queue,
-            texts=segments, should_massage=False, voice_code=Prefs().voice_code, 
+            text_segments=segments, should_massage=False, voice_code=Prefs().voice_code, 
             has_message_start=True
         )
         AppUtil.add_to_tts_queue_end_item(tts_queue=self.tts_queue)
@@ -256,17 +254,17 @@ class App:
     def print_to_content(self, message: str) -> None:        
         if Shared.clear_placeholder_flag:
             Shared.clear_placeholder_flag = False
-            self.ui.content_control.erase_last_block()
+            self.ui.content_control.model.erase_last_block()
         
         if self.print_stroke_flag:
             self.print_stroke_flag = False
-            self.print_to_content(f"{Color.DARKEST}[STROKE]")
+            self.print_to_content(f"[dark][STROKE]")
 
-        self.ui.content_control.add_block(message)
+        self.ui.content_control.model.add_block(message)
         self.ui.application.invalidate()
 
     def print_to_log(self, message: str) -> None:
-        self.ui.log_control.add_block(message)
+        self.ui.log_control.model.add_block(message)
         self.ui.application.invalidate()
 
     def update_title(self) -> None:
@@ -281,18 +279,19 @@ class App:
         s = s.replace("%sync", f"(currently: {"on" if Prefs().sync_text_to_audio else "off"})")
         if Prefs().ix_mode == "chat":
             assert(Prefs().chat_completions_config)
-            s += f"{Color.with_code(Color.FEEDBACK, "i")}You are in \"chat mode.\" The LLM will talk to you."
-            s += f"\n{Color.FEEDBACK_DARK}({Prefs().chat_completions_config.url})" # type: ignore
+            s += f"[feedback+i]You are in \"chat mode.\" The LLM will talk to you."
+            s += f"\n[feedback_dark]({Prefs().chat_completions_config.url})" # type: ignore
         else:
-            s += f"{Color.with_code(Color.FEEDBACK, "i")}You are in \"direct input mode.\"" 
-            s += f"\n{Color.with_code(Color.FEEDBACK, "i")}Speech will be generated from your input."
+            s += f"[feedback+i]You are in \"direct input mode.\"" 
+            s += f"\n[feedback+i]Speech will be generated from your input."
         s = s.replace("%save", f"(currently: {"on" if Prefs().save_audio_to_disk else "off"})")
         self.print_to_content(s)
 
     def print_status(self, text: str) -> None:
 
-        self.ui.audio_status_buffer.reset()
-        self.ui.audio_status_buffer.insert_text(text)
+        #self.ui.audio_status_buffer.reset()
+        #self.ui.audio_status_buffer.insert_text(text)
+        pass
 
     async def stop_all(self) -> None:
         """
@@ -308,7 +307,7 @@ class App:
         AppUtil.clear_queue(self.ui_queue)
         Shared.synced_text_queue.clear()        
 
-    async def ui_message_handler_loop(self):
+    async def ui_message_queue_loop(self):
         """
         Polls the ui message queue and updates the UI accordingly
         """
@@ -318,42 +317,35 @@ class App:
                 self.print_ui_message(ui_message)
                 self.ui_queue.task_done()
             except queue.Empty:
-                await asyncio.sleep(0.1) 
-            except Exception as e:
-                L.e(f"Error in ui_message_handler_loop: {e}\n{traceback.format_exc()}")     
-                try:
-                    self.print_to_log(f"{Color.ERROR}Error handling UI message: {e}")
-                except Exception:
-                     pass
-                await asyncio.sleep(1) # longer wait here
+                # This is the one queue handler which should be the fastest loop
+                await asyncio.sleep(0.033)
 
-    def print_ui_message(self, m: UiMessage) -> None:
-        
+    def print_ui_message(self, ui_message: UiMessage) -> None:
         """ 
-        Prints to or updates one of the UI widgets or whatever based on ui_message's type 
+        Updates a part of the UI based on ui_message's type 
         """
-        if isinstance(m, PrintUiMessage):
-            self.print_to_content(m.text)
-        elif isinstance(m, StreamedPrintUiMessage):
+        if isinstance(ui_message, PrintUiMessage):
+            self.print_to_content(ui_message.text)
+        elif isinstance(ui_message, StreamedPrintUiMessage):
             if not Prefs().sync_text_to_audio: 
                 if Shared.clear_placeholder_flag:
-                    self.ui.content_control.replace_last_block(m.text)
+                    self.ui.content_control.model.replace_last_block(ui_message.text)
                 else:
-                    self.ui.content_control.append_to_last_block(m.text)
+                    self.ui.content_control.model.append_to_last_block(ui_message.text)
                 Shared.clear_placeholder_flag = False            
-        elif isinstance(m, SyncedPrintUiMessage):
+        elif isinstance(ui_message, SyncedPrintUiMessage):
             if Prefs().sync_text_to_audio:
                 if Shared.clear_placeholder_flag:
-                    self.ui.content_control.replace_last_block(m.item.display_text)
+                    self.ui.content_control.model.replace_last_block(ui_message.item.display_text)
                 else:
-                    self.ui.content_control.append_to_last_block(m.item.display_text)
+                    self.ui.content_control.model.append_to_last_block(ui_message.item.display_text)
                 Shared.clear_placeholder_flag = False
-        elif isinstance(m, LogUiMessage):
-            self.print_to_log(m.text)
-        elif isinstance(m, GenStatusUiMessage):
-            self.ui.update_gen_status(m.item)
-        elif isinstance(m, AudioStatusUiMessage):
-            self.ui.update_audio_status(m.text)
+        elif isinstance(ui_message, LogUiMessage):
+            self.print_to_log(ui_message.text)
+        elif isinstance(ui_message, GenStatusUiMessage):
+            self.ui.update_gen_status(ui_message.item)
+        elif isinstance(ui_message, AudioBufferUiMessage):
+            self.ui.update_audio_status(ui_message.seconds)
         
     async def on_enter(self) -> None:
         user_input = self.ui.input_buffer.text

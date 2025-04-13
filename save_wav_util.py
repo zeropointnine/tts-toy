@@ -6,11 +6,9 @@ import numpy as np
 from scipy.io.wavfile import write as write_wav
 from app_types import LogUiMessage, SoundFileItem, UiMessage
 from app_util import AppUtil
-from color import Color
 from constants import Constants
 from l import L
 from prefs import Prefs
-from shared import Shared
 from text_massager import TextMassager
 from util import Util
 
@@ -30,7 +28,7 @@ class SaveWavUtil:
             err = SaveWavUtil.save_wav_file(sound_file_item.sound_data, file_path)
             if err:
                 L.d(f"save error: {err}")
-                AppUtil.send_ui_message(ui_queue, LogUiMessage(Color.ERROR + err))
+                AppUtil.send_ui_message(ui_queue, LogUiMessage("[error]" + err))
             else:
                 L.d(f"saved {"(truncated)" if is_truncated else ""}")
                 AppUtil.send_ui_message(ui_queue, LogUiMessage(f"Saved: {os.path.basename(file_path)}"))

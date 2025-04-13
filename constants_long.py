@@ -1,26 +1,25 @@
 class ConstantsLong:
 
-    MENU_TEXT = """
-[cccccc+b]End-user system prompt:
+    MENU_TEXT = """[title+b]End-user system prompt:
 
     Enter some text. That's it. 
 
-Special commands:
+[title+b]Special commands:
 
-    !chat or !c - switch to "chat mode" 
-    !direct or !d - switch to "direct input mode"
+    [blue]!chat[light] or [blue]!c[light] - switch to "chat mode" 
+    [blue]!direct[light] or [blue]!d[light] - switch to "direct input mode"
 
     voices:
-        !tara, !leah, !jess, !leo, !dan, !mia, !zac, !zoe, 
-        !random
+        [blue]!tara, !leah, !jess, !leo, !dan, !mia, !zac, !zoe, 
+        [blue]!random
 
-    !stop or !s - stop audio output
-    !clear - clear chat history 
+    [blue]!stop[light] or [blue]!s[light] - stop audio output
+    [blue]!clear[light] - clear chat history 
 
-    !sync - sync text to audio playback (toggle) %sync
-    !save - save audio output to disk (toggle) %save
+    [blue]!sync[light] - sync text to audio playback (toggle) %sync
+    [blue]!save[light] - save audio output to disk (toggle) %save
 
-    !help - this help text"""
+    [blue]!help[light] - this help text"""
 
     # ------------------------------------------------------------------------------------
 

@@ -1,7 +1,7 @@
 import aiohttp
 import asyncio
 from completions_config import CompletionsConfig
-from l import L
+from l import L # type: ignore
 
 class CompletionsSimpleRequester:
     """

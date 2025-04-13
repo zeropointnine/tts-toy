@@ -5,7 +5,6 @@ import queue
 import time
 from threading import Thread
 from app_types import *
-from color import Color
 from l import L
 from completions_config import CompletionsConfig
 from orpheus_gen import OrpheusGen
@@ -51,7 +50,8 @@ class AudioStreamer:
         # Audio buffer data queue, which gets fed to the sound device
         self.audio_buffer_queue = queue.Queue[np.ndarray](maxsize=MAX_AUDIO_QUEUE_SIZE)
 
-        self.last_audio_buffer_message_time: float = 0
+        self.last_buffer_message_time: float = 0
+        self.last_buffer_message_value: float = 0
 
         # Immediately start the worker thread
         thread = Thread(target=self.tts_queue_loop, daemon=True)
@@ -89,7 +89,7 @@ class AudioStreamer:
                     try:
                         audio_chunk = audio_chunk.astype(DTYPE_STR)
                     except Exception as e:
-                        L.w(f"{Color.WARNING}Couldn't convert audio chunk, skipping: {e}")
+                        L.w(f"[warning]Couldn't convert audio chunk, skipping: {e}")
                         continue
 
                 internal_buffer = np.concatenate((internal_buffer, audio_chunk))
@@ -116,32 +116,20 @@ class AudioStreamer:
             # Normal behavior
             pass
         except Exception as e:
-            s = f"{Color.ERROR}Exception occurred: {e}"
+            s = f"[error]Exception occurred: {e}"
             AppUtil.send_ui_message(self.ui_queue, LogUiMessage(s))
 
     def sounddevice_callback(self, outdata, num_frames, time_, status):
         """
         Callback function for sounddevice stream.
-        Gets invoked (SAMPLERATE / BLOCKSIZE) times a second presumably
+        Gets invoked (SAMPLERATE / BLOCKSIZE) times a second 
         """
 
         AudioStreamer.tick_num += 1
 
-        self.send_synced_text_to_ui_if_necessary()
-
-        # Update UI with current buffer size
-        if time.time() - self.last_audio_buffer_message_time > 0.15:
-            self.last_audio_buffer_message_time = time.time()
-            if self.audio_buffer_queue.qsize():
-                audio_buffer_seconds = self.audio_buffer_queue.qsize() * (BLOCKSIZE/SAMPLERATE)
-                s = f"{audio_buffer_seconds:.1f}s"
-            else:
-                s = ""
-            AppUtil.send_ui_message(self.ui_queue, AudioStatusUiMessage(s))
-
         if status.output_underflow:
             # TODO how to recover from this?
-            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"{Color.ERROR}Audio output underflow. App restart may be required."))
+            AppUtil.send_ui_message(self.ui_queue, LogUiMessage("[error]Audio output underflow. App restart may be required."))
 
         try:
             data = self.audio_buffer_queue.get_nowait()
@@ -156,24 +144,27 @@ class AudioStreamer:
             else: # data_len > frames
                 L.w(f"Audio chunk larger ({data_len}) than expected ({num_frames}), will truncate")
                 outdata[:, 0] = data[:num_frames] 
-            
         except queue.Empty:
             # Fill buffer with silence
             outdata.fill(0)
         except Exception as e:
             L.w("Error: {e}")
             outdata.fill(0)
-    
-    def send_synced_text_to_ui_if_necessary(self) -> None:
 
-        if not Shared.synced_text_queue:
-            return
-        item = Shared.synced_text_queue[0]
-        if AudioStreamer.tick_num < item.target_tick:
-            return
-        
-        del Shared.synced_text_queue[0] 
-        AppUtil.send_ui_message(self.ui_queue, SyncedPrintUiMessage(item))
+        # Update UI with audio buffer size
+        buffer_seconds = self.audio_buffer_queue.qsize() * (BLOCKSIZE/SAMPLERATE)
+        b = (time.time() - self.last_buffer_message_time > 0.10) and (buffer_seconds != self.last_buffer_message_value)                
+        if b:
+            AppUtil.send_ui_message(self.ui_queue, AudioBufferUiMessage(buffer_seconds))
+            self.last_buffer_message_time = time.time()
+            self.last_buffer_message_value = buffer_seconds
+
+        # Send synced text item if necessary
+        if Shared.synced_text_queue:
+            item = Shared.synced_text_queue[0]
+            if AudioStreamer.tick_num >= item.target_tick:       
+                del Shared.synced_text_queue[0] 
+                AppUtil.send_ui_message(self.ui_queue, SyncedPrintUiMessage(item))
 
     def tts_queue_loop(self):
         """
@@ -203,7 +194,7 @@ class AudioStreamer:
                     time.sleep(0.1) 
                     continue
 
-                # Wait for a tts item w/ 0.1s timeout
+                # Wait for a tts item, and timeout after 0.1s
                 try:
                     tts_item = self.tts_queue.get(block=True, timeout=0.1)
                     L.d(f"TtsItem: {tts_item}")
@@ -251,7 +242,7 @@ class AudioStreamer:
         except (sd.PortAudioError, Exception) as e:
             s = f"Error with sounddevice. Please restart :/ {e}"
             L.e(s)
-            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"{Color.ERROR}{s}"))
+            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"[error]{s}"))
 
     def get_audio_queue_size(self) -> int:
         return self.audio_buffer_queue.qsize()

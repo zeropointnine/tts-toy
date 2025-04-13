@@ -4,7 +4,6 @@ import queue
 import threading
 from pathlib import Path
 from app_types import LogUiMessage, UiMessage
-from color import Color
 from completions_config import CompletionsConfig
 from constants import Constants
 from app_util import AppUtil
@@ -145,7 +144,7 @@ class Prefs:
                 return True
         except Exception as e:
             L.e(f"Error saving config file: {e}")
-            AppUtil.send_ui_message(self._ui_queue, LogUiMessage(Color.ERROR + str(e)))
+            AppUtil.send_ui_message(self._ui_queue, LogUiMessage(f"[error]{e}"))
         return False
     
     @staticmethod

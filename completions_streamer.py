@@ -96,8 +96,8 @@ class CompletionsStreamer:
                     # Parse JSON
                     json_data = json.loads(data_content)
 
-                    # {'error': {'message': 'Rate limit exceeded: free-models-per-day. Add 8.338842540000002 credits to unlock 1000 free model requests per day', 'code': 429, 'met
                     if json_data.get("error"):
+                        # {'error': {'message': 'Rate limit exceeded: etc', 'code': 429, ...
                         error_message = json_data["error"].get("message")
                         if error_message:
                             return "", f"Service returned error: {error_message}"
@@ -126,7 +126,7 @@ class CompletionsStreamer:
                     if segments:
                         AppUtil.add_to_tts_queue(
                             tts_queue=self.tts_queue,
-                            texts=segments, should_massage=True, voice_code=self.voice, 
+                            text_segments=segments, should_massage=True, voice_code=self.voice, 
                             has_message_start=is_first_segment
                         )
                         if is_first_segment:
@@ -151,7 +151,7 @@ class CompletionsStreamer:
                 remainder = TextMassager.massage_assistant_text_segment_for_tts(remainder)
                 AppUtil.add_to_tts_queue(
                     tts_queue=self.tts_queue,
-                    texts=[remainder], should_massage=True, voice_code=self.voice, 
+                    text_segments=[remainder], should_massage=True, voice_code=self.voice, 
                     has_message_start=False
                 )
             # Add special message-end item
@@ -161,8 +161,6 @@ class CompletionsStreamer:
             elapsed = time.time() - start_time
             elapsed = AppUtil.elapsed_string(elapsed)
             AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"Chat response stream complete ({elapsed})"))
-
-            # TODO minor retroactively trim the last printed text segment to remove trailing extra newline when that occurs (eg gemini flash lite)
 
             return full_response_content, ""
 

@@ -9,7 +9,6 @@ import asyncio
 
 from app_types import *
 from app_util import AppUtil
-from color import Color
 from constants import Constants
 from l import L
 from completions_config import CompletionsConfig
@@ -54,6 +53,7 @@ class OrpheusGen:
                 synced_text_item = SyncedTextItem(AudioStreamer.tick_num, tts_content_item.raw_text)
                 Shared.synced_text_queue.append(synced_text_item)
                 return
+            L.d(f"tts text: {tts_text}")
 
         log_text = TextMassager.massage_display_text_segment_for_log(tts_content_item.raw_text)
 
@@ -127,8 +127,8 @@ class OrpheusGen:
                         synced_text_item = SyncedTextItem(target_tick, tts_content_item.raw_text)
                         Shared.synced_text_queue.append(synced_text_item)
 
-                    # Send UI status update
-                    if time.time() - last_ui_message_time > 0.15:
+                    # Update audio buffer size text
+                    if time.time() - last_ui_message_time >= 0.1:
                         last_ui_message_time = time.time()
                         length = num_samples / SAMPLE_RATE
                         elapsed = time.time() - start_time
@@ -136,7 +136,7 @@ class OrpheusGen:
                         AppUtil.send_ui_message(self.ui_queue, GenStatusUiMessage(gen_status))
 
             except Exception as e:
-                text = f"{Color.ERROR}Error in audio gen: {e}"
+                text = f"[error]Error in audio gen: {e}"
                 AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
                 did_complete = False
                 # Optionally put an error sentinel onto the queue
@@ -151,7 +151,7 @@ class OrpheusGen:
                     audio_length = num_samples / SAMPLE_RATE
                     elapsed = time.time() - start_time
                     multi = audio_length / elapsed
-                    s = f"{Color.MEDIUM}{log_text}\n"
+                    s = f"[medium]{log_text}\n"
                     s += f"length: {audio_length:.2f}s elapsed: {elapsed:.2f}s ({multi:.1f}x)"
                     AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(s))
 
@@ -161,7 +161,7 @@ class OrpheusGen:
                         await decoder_gen.aclose()
                         # printt("Tokens decoder closed.") # Optional debug
                     except Exception as e:
-                        text = f"{Color.WARNING}Error closing tokens_decoder: {e}"
+                        text = f"[warning]Error closing tokens_decoder: {e}"
                         AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
                 
                 # Explicitly close the async token generator wrapper
@@ -170,7 +170,7 @@ class OrpheusGen:
                         await token_gen.aclose()
                         # printt("Token gen wrapper closed.") # Optional debug
                     except Exception as e:
-                        text = f"{Color.WARNING}Error closing token_gen_wrapper: {e}"
+                        text = f"[warning]Error closing token_gen_wrapper: {e}"
                         AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
 
                 # Sentinel to indicate completion
@@ -268,12 +268,12 @@ class OrpheusGen:
                 stream=True
             )
         except Exception as e:
-            text = f"{Color.ERROR}Orpheus service request failed: {e}"
+            text = f"[error]Orpheus service request failed: {e}"
             AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
             return
 
         if response.status_code != 200:
-            text = f"{Color.ERROR}Orpheus service request failed: {response.status_code} - {response.text}"
+            text = f"[error]Orpheus service request failed: {response.status_code} - {response.text}"
             AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
             return
 
@@ -306,7 +306,7 @@ class OrpheusGen:
                             yield token_text
         
                 except json.JSONDecodeError as e:
-                    text = f"{Color.ERROR}Error decoding API JSON response: {e}"
+                    text = f"[error]Error decoding API JSON response: {e}"
                     AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(text))
                     continue
 

@@ -1,7 +1,6 @@
 import re
 
 import emoji
-from color import Color
 from constants import Constants
 from constants_long import ConstantsLong
 
@@ -9,48 +8,28 @@ class TextMassager:
 
     @staticmethod
     def massage_assistant_text_segment_for_tts(text: str) -> str:
-        text = text.strip()        
-
-        # Orpheus can go nuts when fed a single character of punctuation, so don't
-        if len(text) == 1 and not (text.isdigit or text.isalpha):
-            return ""
-
+        text = TextMassager.remove_non_alnum_words(text)
         text = TextMassager._double_asterisk_words_to_caps(text) 
-
         text = emoji.replace_emoji(text, replace=' ')
-
+        text = text.strip()
         return text
 
     @staticmethod
     def massage_display_text_segment_for_log(text: str) -> str:
         text = text.strip()
         # Collapse consecutive newlines into one
-        collapsed_text = re.sub(r"\n+", "\n", text)
+        text = re.sub(r"\n+", "\n", text)
         # Replace remaining newlines with separator punctuation
-        result = collapsed_text.replace("\n", " // ")
+        text = text.replace("\n", " // ")
         # Collapse consecutive spaces into one
-        collapsed_text = re.sub(r" +", " ", text)
-        return result
-
-    @staticmethod
-    def _double_asterisk_words_to_caps(text: str) -> str:
-        """ 
-        Transform occurrences of **word** to WORD
-        """
-        pattern = r"\*\*(\w+)\*\*"
-
-        def replace_func(match):
-            word = match.group(1)
-            return word.upper()
-
-        modified_text = re.sub(pattern, replace_func, text)
-        return modified_text
+        text = re.sub(r" +", " ", text)
+        return text
 
     @staticmethod
     def massage_user_input_for_print(text: str) -> str:
         # Simply prepends color code at start of each line
         lines = text.split("\n")
-        lines = [f"{Color.INPUT}{line}" for line in lines]
+        lines = [f"[input]{line}" for line in lines]
         text = "\n".join(lines)
         return text
 
@@ -80,6 +59,33 @@ class TextMassager:
         # Truncate to max_chars
         return text[:max_chars]
     
+    @staticmethod
+    def _double_asterisk_words_to_caps(text: str) -> str:
+        """ 
+        Transform occurrences of **word** to WORD
+        """
+        pattern = r"\*\*(\w+)\*\*"
+
+        def replace_func(match):
+            word = match.group(1)
+            return word.upper()
+
+        modified_text = re.sub(pattern, replace_func, text)
+        return modified_text
+
+    @staticmethod
+    def remove_non_alnum_words(text):
+        """
+        Removes words that contain no alphanumeric characters,
+        then cleans up any resulting double spaces.
+        """
+        # Split and filter words
+        words = [
+            word for word in text.split(' ')
+            if any(c.isalnum() for c in word)
+        ]    
+        # Rejoin with single spaces
+        return ' '.join(words)
 # --------
 
 """
@@ -185,3 +191,8 @@ def remove_orpheus_emote_tags(text):
     new_text = re.sub(r" +", " ", new_text)
 
     return new_text.strip() # Remove leading/trailing whitespace potentially left
+
+# ---
+
+if __name__ == "__main__":
+    pass
