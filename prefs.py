@@ -149,7 +149,7 @@ class Prefs:
     
     @staticmethod
     def get_file_path() -> str:
-        if AppUtil.is_dev:
+        if AppUtil.is_dev():
             return Constants.CONFIG_JSON_FILE_PATH_DEV
         else:
             return Constants.CONFIG_JSON_FILE_PATH
