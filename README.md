@@ -17,7 +17,7 @@ Core decoding logic adapted from [orpheus-tts-local](https://github.com/isaiahbj
     git clone [github repo clone url]
     cd [repo name]
 
-Init virtual environment, and activate. Eg:
+Init virtual environment, and activate (requires *Python 3.13*+). Eg:
 
     `python -m venv venv`
     `venv\Scripts\activate`
