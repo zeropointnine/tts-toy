@@ -22,7 +22,7 @@ from audio_streamer import AudioStreamer
 class App:
     """
     Rem, requires an LLM server (eg, llama-server or LM Studio) with the Orpheus model loaded. 
-    And then update `config.json` with the appropriate url (eg, http://127.0.0.1:8080).
+    Then, update `config.json` with the appropriate url (eg, http://127.0.0.1:8080).
     """
 
     def __init__(self):
@@ -160,11 +160,6 @@ class App:
                 else:
                     feedback = "Already in chat mode"
 
-            case "sync":
-                Prefs().sync_text_to_audio = not Prefs().sync_text_to_audio
-                feedback = "\"Sync text to audio playback\" set to: "
-                feedback += "On" if Prefs().sync_text_to_audio else "Off"
-
             case "save":
                 if Prefs().save_audio_to_disk:
                     Prefs().save_audio_to_disk = False
@@ -218,10 +213,7 @@ class App:
         print_text = TextMassager.massage_user_input_for_print(user_input)
         self.print_to_content(print_text) 
 
-        # Add the initial block for the assistant's response
-        placeholder_text = f"[dark+i]Sending request..."
-        self.print_to_content(placeholder_text)
-        Shared.clear_placeholder_flag = True
+        self.print_placeholder("Sending request...")
 
         # Make the streaming request
         self.llm_streamer_manager.make_request(user_input, Prefs().voice_code, False)
@@ -230,15 +222,9 @@ class App:
                 
         user_input = TextMassager.transform_direct_mode_input_dev(user_input)
         
-        if Prefs().sync_text_to_audio:
-            placeholder_text = f"[dark+i]Starting..."
-            self.print_to_content(placeholder_text)
-            Shared.clear_placeholder_flag = True
-        else:
-            self.print_to_content(user_input) 
+        self.print_to_content(user_input)
 
         await self.stop_all()
-
         time.sleep(0.1) # TODO revisit need for this
 
         segments = TextSegmenter.segment_full_message(user_input) 
@@ -252,8 +238,8 @@ class App:
     # ---
 
     def print_to_content(self, message: str) -> None:        
-        if Shared.clear_placeholder_flag:
-            Shared.clear_placeholder_flag = False
+        if Shared.placeholder_flag:
+            Shared.placeholder_flag = False
             self.ui.content_control.model.erase_last_block()
         
         if self.print_stroke_flag:
@@ -262,6 +248,11 @@ class App:
 
         self.ui.content_control.model.add_block(message)
         self.ui.application.invalidate()
+
+    def print_placeholder(self, text: str) -> None:
+        placeholder_text = f"[dark+i]{text}"
+        self.print_to_content(placeholder_text)
+        Shared.placeholder_flag = True
 
     def print_to_log(self, message: str) -> None:
         self.ui.log_control.model.add_block(message)
@@ -276,22 +267,17 @@ class App:
     def print_menu(self) -> None:
         s = ConstantsLong.MENU_TEXT
         s = ConstantsLong.MENU_TEXT.rstrip() + "\n\n"
-        s = s.replace("%sync", f"(currently: {"on" if Prefs().sync_text_to_audio else "off"})")
+        s = s.replace("%save", f"(currently: {"on" if Prefs().save_audio_to_disk else "off"})")
+
         if Prefs().ix_mode == "chat":
             assert(Prefs().chat_completions_config)
             s += f"[feedback+i]You are in \"chat mode.\" The LLM will talk to you."
-            s += f"\n[feedback_dark]({Prefs().chat_completions_config.url})" # type: ignore
+            s += f"\n[feedback_dark]{Prefs().chat_completions_config.url}" # type: ignore
         else:
             s += f"[feedback+i]You are in \"direct input mode.\"" 
             s += f"\n[feedback+i]Speech will be generated from your input."
-        s = s.replace("%save", f"(currently: {"on" if Prefs().save_audio_to_disk else "off"})")
+
         self.print_to_content(s)
-
-    def print_status(self, text: str) -> None:
-
-        #self.ui.audio_status_buffer.reset()
-        #self.ui.audio_status_buffer.insert_text(text)
-        pass
 
     async def stop_all(self) -> None:
         """
@@ -306,6 +292,7 @@ class App:
         self.audio_streamer.clear_queues()
         AppUtil.clear_queue(self.ui_queue)
         Shared.synced_text_queue.clear()        
+        self.ui.content_control.model.clear_highlight()
 
     async def ui_message_queue_loop(self):
         """
@@ -324,28 +311,33 @@ class App:
         """ 
         Updates a part of the UI based on ui_message's type 
         """
-        if isinstance(ui_message, PrintUiMessage):
+        if isinstance(ui_message, FullTextUiMessage):
             self.print_to_content(ui_message.text)
-        elif isinstance(ui_message, StreamedPrintUiMessage):
-            if not Prefs().sync_text_to_audio: 
-                if Shared.clear_placeholder_flag:
-                    self.ui.content_control.model.replace_last_block(ui_message.text)
-                else:
-                    self.ui.content_control.model.append_to_last_block(ui_message.text)
-                Shared.clear_placeholder_flag = False            
-        elif isinstance(ui_message, SyncedPrintUiMessage):
-            if Prefs().sync_text_to_audio:
-                if Shared.clear_placeholder_flag:
-                    self.ui.content_control.model.replace_last_block(ui_message.item.display_text)
-                else:
-                    self.ui.content_control.model.append_to_last_block(ui_message.item.display_text)
-                Shared.clear_placeholder_flag = False
+
+        elif isinstance(ui_message, StreamedTextUiMessage):
+            if Shared.placeholder_flag:
+                Shared.placeholder_flag = False            
+                self.ui.content_control.model.replace_last_block(ui_message.text)
+            else:
+                self.ui.content_control.model.append_to_last_block(ui_message.text)
+        elif isinstance(ui_message, SyncedAudioUiMessage):
+            self.ui.content_control.model.set_highlight(ui_message.item.display_text)
         elif isinstance(ui_message, LogUiMessage):
             self.print_to_log(ui_message.text)
         elif isinstance(ui_message, GenStatusUiMessage):
             self.ui.update_gen_status(ui_message.item)
+
         elif isinstance(ui_message, AudioBufferUiMessage):
             self.ui.update_audio_status(ui_message.seconds)
+            if ui_message.got_depleted:
+                if self.tts_queue.qsize() == 0:
+                    # Full audio message has finished
+                    self.ui.content_control.model.clear_highlight()
+                else:
+                    # Consider some UI feedback if buffer is depleted but more audio
+                    # for the current message is still pending. May need more robust
+                    # test than just getting here.
+                    pass
         
     async def on_enter(self) -> None:
         user_input = self.ui.input_buffer.text

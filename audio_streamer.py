@@ -52,6 +52,7 @@ class AudioStreamer:
 
         self.last_buffer_message_time: float = 0
         self.last_buffer_message_value: float = 0
+        self.last_queue_size: int = 0
 
         # Immediately start the worker thread
         thread = Thread(target=self.tts_queue_loop, daemon=True)
@@ -126,6 +127,7 @@ class AudioStreamer:
         """
 
         AudioStreamer.tick_num += 1
+        self.last_queue_size = self.audio_buffer_queue.qsize()
 
         if status.output_underflow:
             # TODO how to recover from this?
@@ -153,9 +155,10 @@ class AudioStreamer:
 
         # Update UI with audio buffer size
         buffer_seconds = self.audio_buffer_queue.qsize() * (BLOCKSIZE/SAMPLERATE)
-        b = (time.time() - self.last_buffer_message_time > 0.10) and (buffer_seconds != self.last_buffer_message_value)                
-        if b:
-            AppUtil.send_ui_message(self.ui_queue, AudioBufferUiMessage(buffer_seconds))
+        should_show = (time.time() - self.last_buffer_message_time > 0.10) and (buffer_seconds != self.last_buffer_message_value)                
+        got_depleted = self.audio_buffer_queue.qsize() == 0 and self.last_queue_size > 0
+        if should_show or got_depleted:
+            AppUtil.send_ui_message(self.ui_queue, AudioBufferUiMessage(buffer_seconds, got_depleted))
             self.last_buffer_message_time = time.time()
             self.last_buffer_message_value = buffer_seconds
 
@@ -164,7 +167,7 @@ class AudioStreamer:
             item = Shared.synced_text_queue[0]
             if AudioStreamer.tick_num >= item.target_tick:       
                 del Shared.synced_text_queue[0] 
-                AppUtil.send_ui_message(self.ui_queue, SyncedPrintUiMessage(item))
+                AppUtil.send_ui_message(self.ui_queue, SyncedAudioUiMessage(item))
 
     def tts_queue_loop(self):
         """

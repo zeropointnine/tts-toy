@@ -12,7 +12,7 @@ from l import L
 class Prefs:
     """ 
     App-wide settings, which get loaded and saved to json file
-    Thread-safe singleton
+    Singleton
     """
 
     _instance = None
@@ -24,7 +24,6 @@ class Prefs:
     chat_completions_config: CompletionsConfig | None
 
     _ix_mode: str
-    _sync_text_to_audio: bool 
     _save_audio_to_disk: bool 
     _audio_save_dir_literal: str
     _voice_code: str
@@ -39,7 +38,6 @@ class Prefs:
                     cls._instance = super().__new__(cls)
                     cls.chat_completions_config: CompletionsConfig | None = None
                     cls._ix_mode = ""
-                    cls._sync_text_to_audio: bool = True
                     cls._save_audio_to_disk: bool = False
                     cls._audio_save_dir_literal: str = ""
                     cls._voice_code: str = ""
@@ -80,10 +78,6 @@ class Prefs:
         self._voice_code = prefs_dict.get("voice_code", "")
         if self._voice_code not in Constants.ORPHEUS_VOICE_CODES:
             self.voice_code = Constants.ORPHEUS_VOICE_DEFAULT
-
-        b = prefs_dict.get("sync_text_to_audio", None)
-        if b is not None:
-            self._sync_text_to_audio = b
 
         b = prefs_dict.get("save_audio_to_disk", None)
         if b is not None:
@@ -131,7 +125,6 @@ class Prefs:
             "prefs": {
                 "ix_mode": self._ix_mode,
                 "voice_code": self._voice_code,
-                "sync_text_to_audio": self.sync_text_to_audio,
                 "save_audio_to_disk": self.save_audio_to_disk,
                 "audio_save_dir": self._audio_save_dir_literal
             }
@@ -176,20 +169,6 @@ class Prefs:
         if s == self._voice_code:
             return
         self._voice_code = s
-        self._save()
-
-    @property
-    def sync_text_to_audio(self):
-        # Dictates when text to be vocalized is displayed in the UI.
-        # When True, text chunks are displayed when the corresponding audio is played.
-        # When False, it is printed as soon as it's available.
-        return self._sync_text_to_audio
-    
-    @sync_text_to_audio.setter
-    def sync_text_to_audio(self, b: bool):
-        if b == self._sync_text_to_audio:
-            return
-        self._sync_text_to_audio = b
         self._save()
 
     @property

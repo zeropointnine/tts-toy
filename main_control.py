@@ -67,6 +67,7 @@ class LinesModel:
     MAX_BLOCKS = 50
 
     def __init__(self, color_code: str, bottom_aligned: bool):        
+        
         self.color_code = color_code
         self.bottom_aligned = bottom_aligned
         self.width = 60    
@@ -77,9 +78,11 @@ class LinesModel:
         # Sequence of blocks get displayed with an empty line between them.
         self._blocks: list[str] = []
 
-        # A "line" is a list of StyleTexts that get printed on a single line
+        # List of lines, derived from the list of blocks, 
+        # where a "line" is a list of StyleTexts that get printed on a single line.
         self._lines: list[Line] = []
-        
+
+        self._last_block_highlight = ""        
         self._is_dirty: bool = False
 
         # testing
@@ -101,7 +104,7 @@ class LinesModel:
     def clear(self) -> None:
         self._blocks.clear()
         self._lines.clear()
-        L.d()
+        self._last_block_highlight = ""
 
     def add_block(self, block: str) -> None:
         if len(self._blocks) >= MAX_BLOCKS:
@@ -134,17 +137,47 @@ class LinesModel:
             self._blocks.pop()
         self._is_dirty = True
 
+    def set_highlight(self, substring: str) -> None:
+        """ Highlights a substring in the last block if exists"""
+        self._last_block_highlight = substring
+        self._is_dirty = True
+
+    def clear_highlight(self) -> None:
+        self._last_block_highlight = ""
+        self._is_dirty = True
+
     def _block_to_lines(self, block: str) -> list[Line]:
 
+        processed_block = block
+
+        # Apply highlight to the entire block text if the substring exists
+        if self._last_block_highlight and self._last_block_highlight in block:
+            # Apply simple formatting tags. Assumes highlight doesn't contain special chars.
+            # NOTE: This simple replace might have issues if the highlight string appears
+            # multiple times or interferes with existing formatting tags.
+            # A more robust solution might involve parsing existing tags first.
+            highlight_tag = f"[highlight]{self._last_block_highlight}[light]"
+            processed_block = block.replace(self._last_block_highlight, highlight_tag)
+        elif self._last_block_highlight:
+            L.d(f"Highlight '{self._last_block_highlight}' not found in block.")
+            # L.d(f"Block content: {block}") # Uncomment for verbose debugging
+
         # "paragraph" = line of text without line breaks
-        paragraphs = block.splitlines() 
-        
+        # Process the potentially modified block text
+        paragraphs = processed_block.splitlines()
+        if not paragraphs: # Handle empty blocks or blocks with only newlines
+             paragraphs = [""]
+
         result = []
         for paragraph in paragraphs:
-            items = MainControlParser.transform(paragraph, self.width, self.color_code)
+            # If the original block was empty but got highlight tags, paragraph might be empty
+            if not paragraph and not processed_block:
+                 items = AppUtil.make_empty_line()
+            else:
+                 items = MainControlParser.transform(paragraph, self.width, self.color_code)
             result.extend(items)
-        
-        # Add empty line after block 
+
+        # Add empty line after block
         result.append(AppUtil.make_empty_line())
 
         return result

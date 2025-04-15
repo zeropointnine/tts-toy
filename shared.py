@@ -16,4 +16,4 @@ class Shared:
     synced_text_queue: Deque[SyncedTextItem] = Deque()
 
     has_imported_decoder: bool = False
-    clear_placeholder_flag = False
+    placeholder_flag = False

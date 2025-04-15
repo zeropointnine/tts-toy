@@ -16,7 +16,6 @@ class ConstantsLong:
     [blue]!stop[light] or [blue]!s[light] - stop audio output
     [blue]!clear[light] - clear chat history 
 
-    [blue]!sync[light] - sync text to audio playback (toggle) %sync
     [blue]!save[light] - save audio output to disk (toggle) %save
 
     [blue]!help[light] - this help text"""

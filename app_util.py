@@ -39,7 +39,7 @@ class AppUtil:
 
             content_error_message = f"[error]Orpheus server at {orpheus_completions_config.url} may not be online.\n"
             content_error_message += "[error]Check config.json file."
-            AppUtil.send_ui_message(ui_queue, PrintUiMessage(content_error_message))
+            AppUtil.send_ui_message(ui_queue, FullTextUiMessage(content_error_message))
         else:
             AppUtil.send_ui_message(
                 ui_queue, LogUiMessage(f"Orpheus server is online\n{orpheus_completions_config.url}"))
