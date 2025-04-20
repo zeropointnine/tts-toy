@@ -348,8 +348,8 @@ class App:
             self.ui.update_audio_status(ui_message.seconds)
         
     async def on_enter(self) -> None:
-        user_input = self.ui.input_buffer.text
-        self.ui.input_buffer.reset()
+        user_input = self.ui.text_area.text
+        self.ui.text_area.text = ""
         await self.process_user_input(user_input)
 
 # ---

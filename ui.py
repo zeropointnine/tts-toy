@@ -2,8 +2,8 @@ from typing import Callable
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.layout.containers import HSplit, Window, VSplit
-from prompt_toolkit.widgets import HorizontalLine, VerticalLine
-from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
+from prompt_toolkit.widgets import HorizontalLine, VerticalLine, TextArea
+from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
@@ -17,7 +17,7 @@ from util import Util
 
 class Ui:
     """
-    Mostly just a simple holder for prompt-toolkit UI objects
+    Mostly just a simple holder of prompt-toolkit UI objects
     """
 
     def __init__(self, on_enter: Callable):
@@ -35,8 +35,9 @@ class Ui:
         self.gen_status_text = AppUtil.make_empty_line()
         self.gen_status_control = FormattedTextControl(lambda: self.gen_status_text)
 
-        self.input_buffer = Buffer()
-        self.input_control = BufferControl(buffer=self.input_buffer)
+        # self.input_buffer = Buffer()
+        # self.input_control = BufferControl(buffer=self.input_buffer)
+        self.text_area = TextArea(multiline=True, wrap_lines=True, height=3)
 
         root_container = HSplit([
             
@@ -60,14 +61,15 @@ class Ui:
 
             # Bottom, three rows high
             VSplit([
-                Window(content=self.input_control, height=3, wrap_lines=True, style="class:input"),
+                # Window(content=self.input_control, height=3, wrap_lines=True, style="class:input"),
+                self.text_area,
                 VerticalLine(),
                 Window(content=self.gen_status_control, height=3, width=50, wrap_lines=False, style="class:gen_status")
             ], padding=1)
 
         ], style=f"bg:{Color.hex('bg')}")
 
-        layout = Layout(root_container, focused_element=self.input_control)
+        layout = Layout(root_container, focused_element=self.text_area)
 
         kb = KeyBindings()
 
@@ -119,7 +121,7 @@ class Ui:
             value = ""
         else:
             elapsed_string = AppUtil.elapsed_string(elapsed)
-            multiplier = f"({(length / elapsed):.1f}x)" if elapsed > 0 else ""
+            multiplier = f"({(length / elapsed):.2f}x)" if elapsed > 0 else ""
             s = f"[dark+i]Generating\n"
             s += "[medium]" + Util.truncate_string(text, WIDTH, ellipsize=True) + "\n"
             s += f"[dark]length: {length:.2f}s elapsed: {elapsed_string} {multiplier}"

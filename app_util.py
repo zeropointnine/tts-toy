@@ -26,7 +26,7 @@ class AppUtil:
         # init "L"
         path = os.path.join(tempfile.gettempdir(), f"{Constants.APP_NAME}.log")
         level = logging.DEBUG if AppUtil.is_dev() else logging.INFO
-        L.init(name="orpheus-tty-toy", path=path, level=level)
+        L.init(name="tts-toy", path=path, level=level)
         L.i(f"=== [START] =============== log level: {level}")
         
     @staticmethod

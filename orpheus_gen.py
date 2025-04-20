@@ -152,7 +152,7 @@ class OrpheusGen:
                     elapsed = time.time() - start_time
                     multi = audio_length / elapsed
                     s = f"[medium]{log_text}\n"
-                    s += f"length: {audio_length:.2f}s elapsed: {elapsed:.2f}s ({multi:.1f}x)"
+                    s += f"length: {audio_length:.2f}s elapsed: {elapsed:.2f}s ({multi:.2f}x)"
                     AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(s))
 
                 # Explicitly close the async generator

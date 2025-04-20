@@ -118,7 +118,7 @@ class Prefs:
             return "", f"Error in \"chatbot_llm\" object in {Prefs.get_file_path()}. Chat functionality disabled. ({e})"
 
         if self.chat_completions_config._api_key_environment_variable and not self.chat_completions_config.api_key:
-            return "", f"The value of the environment variable for api key as specified in the {Prefs.get_file_path()} is empty or does not exist. Chat may not work.",
+            return "", f"The value of the environment variable for api key as specified in \"{Prefs.get_file_path()}\" is empty or does not exist. Chat may not work.",
 
         return "", ""
 
