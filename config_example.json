@@ -22,7 +22,6 @@
     "prefs": {
         "ix_mode": "chat",
         "voice_code": "",
-        "sync_text_to_audio": true,
         "save_audio_to_disk": false,
         "audio_save_dir": ""
     }

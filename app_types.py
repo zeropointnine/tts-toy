@@ -20,15 +20,15 @@ class UiMessage:
     """
     pass
 
-class PrintUiMessage(UiMessage):
+class FullTextUiMessage(UiMessage):
     def __init__(self, text: str):
         self.text = text
 
-class StreamedPrintUiMessage(UiMessage):
+class StreamedTextUiMessage(UiMessage):
     def __init__(self, text: str):
         self.text = text
 
-class SyncedPrintUiMessage(UiMessage):
+class SyncedAudioUiMessage(UiMessage):
     def __init__(self, item: SyncedTextItem):
         self.item = item
 
@@ -41,8 +41,11 @@ class GenStatusUiMessage(UiMessage):
         self.item = item
 
 class AudioBufferUiMessage(UiMessage):
-    def __init__(self, seconds: float):
+    def __init__(self, seconds: float, got_depleted: bool):
         self.seconds = seconds
+        # Flag which is True the first time buffer reaches 0 
+        # after having previously been greater than 0
+        self.got_depleted = got_depleted
 
 # ---
 

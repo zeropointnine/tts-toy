@@ -119,7 +119,7 @@ class CompletionsStreamer:
                     full_response_content += segment 
 
                     # Print to UI
-                    AppUtil.send_ui_message(self.ui_queue, StreamedPrintUiMessage(segment))
+                    AppUtil.send_ui_message(self.ui_queue, StreamedTextUiMessage(segment))
 
                     # Check if we have enough text to generate audio sentences or phrases
                     segments = text_segmenter.add_text(segment)

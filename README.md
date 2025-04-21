@@ -60,13 +60,23 @@ Lastly, the inner `request_dict` object can be populated with properties which w
 
     python app.py
 
-Reminder here that Orpheus model inference + SNAC decoding is not a lightweight task. Anecdotally, my dev system (Ryzen 7700 + 3080Ti) does the audio generation only about 1.5x faster than real-time, using Q8 model.
+# Usage notes
+
+Reminder here that Orpheus model inference + SNAC decoding is not a lightweight task. 
+
+If you're having trouble acheiving stutter-free audio, try offloading Orpheus LLM inference duties to another machine on the local network.
+
+Anecdotally, my dev system (Ryzen 7700 + 3080Ti) does the audio generation only about 1.5x faster than real-time, using Q8 model and running the LLM server on the same machine.
 
 # Updates
 
+2025-04-20
+
+- The sentence or phrase of the currently playing audio segment now highlights in realtime.
+
 2025-04-13
 
-- User settings now persist
+- User settings now persist.
 
 2025-04-11
 
@@ -82,6 +92,5 @@ Reminder here that Orpheus model inference + SNAC decoding is not a lightweight 
 
 # Todo
 
-- Support for OuteAI? (not realtime though, would need different "interaction patterns", maybe a separate project)
 - Web service layer for audio generation?
-- Voice cloning?
+- Voice cloning (will have to wait for official support first)
