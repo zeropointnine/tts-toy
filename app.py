@@ -9,6 +9,7 @@ from constants import Constants
 from l import L # type: ignore
 from completions_config import CompletionsConfig
 from completions_manager import CompletionsManager
+from main_control_parser import MainControlParser
 from prefs import Prefs
 from shared import Shared
 from text_segmenter import TextSegmenter
@@ -293,6 +294,49 @@ class App:
 
         self.print_full_message_to_content(s)
 
+    def print_gen_status(self, gen_status: GenStatus) -> None:
+        """
+        Either updates gen status area or prints to log, depending on "if_finished"
+        """
+
+        WIDTH = 50 - 1
+
+        text, duration, elapsed, ttfb, is_finished = gen_status
+
+        if not text: # Signifies idle
+            output = ""
+        else:
+            if elapsed < 0.1:
+                stat_line = "..."
+            else:
+                multiplier = duration / (elapsed - ttfb)
+                elapsed_string = AppUtil.elapsed_string(elapsed)
+                ttfb_string = AppUtil.elapsed_string(ttfb)
+                duration_string = AppUtil.elapsed_string(duration)
+                if elapsed - ttfb < 0.33:
+                    multiplier_string = ""
+                else:
+                    multiplier_string = f"= {multiplier:.1f}x" 
+                stat_line = f"elapsed {elapsed_string} ttfb {ttfb_string} duration {duration_string} {multiplier_string}"
+
+            if is_finished:
+                output = "[medium]" + text + "\n"
+            else:
+                output = f"[dark+i]Generating\n"
+                output += "[medium]" + Util.truncate_string(text, WIDTH, ellipsize=True) + "\n"
+
+            output += f"[dark]{stat_line}"
+        
+        if is_finished:
+            self.print_to_log(output)
+        else:
+            value = MainControlParser.transform(output, 999, "dark")
+            value = value[0]
+            self.ui.gen_status_text = value
+
+        self.ui.application.invalidate() # TODO: expensive? avoidable?
+
+
     async def stop_all(self) -> None:
         """
         Stops most all the various machinery gracefully.
@@ -339,8 +383,7 @@ class App:
         elif isinstance(ui_message, LogUiMessage):
             self.print_to_log(ui_message.text)
         elif isinstance(ui_message, GenStatusUiMessage):
-            self.ui.update_gen_status(ui_message.item)
-
+            self.print_gen_status(ui_message.item)
         elif isinstance(ui_message, AudioBufferUiMessage):
             self.ui.update_audio_status(ui_message.seconds)
             if ui_message.got_depleted:

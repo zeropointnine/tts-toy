@@ -12,8 +12,6 @@ from color import Color
 from app_types import *
 from l import L # type: ignore
 from main_control import MainControl
-from main_control_parser import MainControlParser
-from util import Util
 
 class Ui:
     """
@@ -114,18 +112,3 @@ class Ui:
         self.audio_status_text = [ (style, s) ]
         self.application.invalidate() # TODO unnecessarily costly? not sure; alternatives?
 
-    def update_gen_status(self, gen_status: GenStatus) -> None:
-        WIDTH = 50 - 1
-        text, length, elapsed = gen_status
-        if elapsed == 0.0:
-            value = ""
-        else:
-            elapsed_string = AppUtil.elapsed_string(elapsed)
-            multiplier = f"({(length / elapsed):.2f}x)" if elapsed > 0 else ""
-            s = f"[dark+i]Generating\n"
-            s += "[medium]" + Util.truncate_string(text, WIDTH, ellipsize=True) + "\n"
-            s += f"[dark]length: {length:.2f}s elapsed: {elapsed_string} {multiplier}"
-            value = MainControlParser.transform(s, 999, "dark")
-            value = value[0]
-        self.gen_status_text = value
-        self.application.invalidate()

@@ -37,7 +37,7 @@ class LogUiMessage(UiMessage):
         self.text = text
 
 class GenStatusUiMessage(UiMessage):
-    def __init__(self, item):
+    def __init__(self, item: GenStatus):
         self.item = item
 
 class AudioBufferUiMessage(UiMessage):
@@ -103,10 +103,20 @@ class GenStatus(NamedTuple):
     Describes the status of a piece of text currently being generated
     """
     text: str
-    length: float
-    elapsed: float
+    duration_seconds: float
+    elapsed_seconds: float
+    ttfb: float # so-called time-to-first-byte
+    is_finished: bool
+
+    @staticmethod
+    def make_empty() -> GenStatus:
+        return GenStatus("", 0, 0, 0, False)
 
 class SoundFileItem:
+    """
+    Accumulates the generated sound data for an entire message,
+    which gets used to save it to disk.
+    """
     def __init__(self, text: str, voice_code: str):
         self.text = text
         self.voice_code = voice_code

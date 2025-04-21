@@ -20,7 +20,7 @@ class OrpheusGen:
     """
     Orpheus audio generation logic
 
-    Adapted from "orpheus-tts-local",
+    Adapted from:
     https://github.com/isaiahbjork/orpheus-tts-local
     """
 
@@ -36,7 +36,7 @@ class OrpheusGen:
 
     def audio_chunk_generator(self, request_config: CompletionsConfig, tts_content_item: TtsContentItem):
         """
-        Does the actual inference to generate the audio data.
+        Does the actual audio inference for a discrete text segment.
         Yields chunks of data via streamed completions service request as they become available.
         Checks stop_event to allow interruption.
         """
@@ -56,8 +56,9 @@ class OrpheusGen:
 
         log_text = TextMassager.massage_display_text_segment_for_log(tts_content_item.raw_text)
 
-        gen_status = GenStatus(log_text, 0.0, 0.0)
-        AppUtil.send_ui_message(self.ui_queue, GenStatusUiMessage(gen_status))
+        self.send_gen_status_ui_message(
+            text=log_text, num_samples=0, start_time=time.time(), first_chunk_time=-1, is_finished=False
+        )
 
         audio_chunk_queue = AudioChunkQueue()
 
@@ -90,6 +91,7 @@ class OrpheusGen:
 
             num_samples = 0
             start_time = time.time()
+            first_chunk_time = 0
             last_ui_message_time = 0
             did_complete = True
             token_gen = None # Initialize wrapper gen
@@ -99,6 +101,7 @@ class OrpheusGen:
                 # Instantiate the generators before the loop
                 token_gen = token_gen_wrapper() # Instantiate the wrapper
                 decoder_gen = self.tokens_decoder(token_gen) # Pass the instance
+
                 async for audio_chunk in decoder_gen:
 
                     # Check stop event within the loop as well
@@ -111,28 +114,27 @@ class OrpheusGen:
                         audio_chunk_queue.put(audio_chunk)
                     elif isinstance(audio_chunk, bytes): # If decoder returns bytes
                         audio_chunk_np = np.frombuffer(audio_chunk, dtype=np.int16)
-                        if num_samples == 0:
-                            # printt(f"Time to first sample: {(time.time() - start_time):.2f}s")
-                            pass
                         num_samples += audio_chunk_np.shape[0]
                         audio_chunk_queue.put(audio_chunk_np)
                     else:
-                        L.w("Received unexpected audio chunk type: {type(audio_chunk)}. Skipping.")
+                        L.w(f"Received unexpected audio chunk type: {type(audio_chunk)}. Skipping.")
                         continue
 
                     if self.is_first_chunk:
+                        # Got first chunk ("first byte")
                         self.is_first_chunk = False
+                        first_chunk_time = time.time()
                         target_tick = AudioStreamer.tick_num + self.get_audio_queue_size()
                         synced_text_item = SyncedTextItem(target_tick, tts_content_item.raw_text)
                         Shared.synced_text_queue.append(synced_text_item)
 
-                    # Update audio buffer size text
+                    # Update status message every 0.1s
                     if time.time() - last_ui_message_time >= 0.1:
                         last_ui_message_time = time.time()
-                        length = num_samples / SAMPLE_RATE
-                        elapsed = time.time() - start_time
-                        gen_status = GenStatus(log_text, length, elapsed)
-                        AppUtil.send_ui_message(self.ui_queue, GenStatusUiMessage(gen_status))
+                        self.send_gen_status_ui_message(
+                            text=log_text, num_samples=num_samples, start_time=start_time, 
+                            first_chunk_time=first_chunk_time, is_finished=False
+                        )
 
             except Exception as e:
                 text = f"[error]Error in audio gen: {e}"
@@ -141,19 +143,6 @@ class OrpheusGen:
                 # Optionally put an error sentinel onto the queue
 
             finally:
-                # Clear the gen status text
-                gen_status = GenStatus(log_text, 0.0, 0.0)
-                AppUtil.send_ui_message(self.ui_queue, GenStatusUiMessage(gen_status))
-                
-                # Send on-complete ui message
-                if did_complete:
-                    audio_length = num_samples / SAMPLE_RATE
-                    elapsed = time.time() - start_time
-                    multi = audio_length / elapsed
-                    s = f"[medium]{log_text}\n"
-                    s += f"length: {audio_length:.2f}s elapsed: {elapsed:.2f}s ({multi:.2f}x)"
-                    AppUtil.send_ui_message(self.ui_queue,  LogUiMessage(s))
-
                 # Explicitly close the async generator
                 if decoder_gen and hasattr(decoder_gen, 'aclose'):
                     try:
@@ -174,6 +163,15 @@ class OrpheusGen:
 
                 # Sentinel to indicate completion
                 audio_chunk_queue.put(None)
+
+                # UI - Clear the gen status text
+                self.send_gen_status_ui_message("", 0, 0, 0, False)
+                # UI - Print gen status to log
+                if did_complete:
+                    self.send_gen_status_ui_message(
+                        text=log_text, num_samples=num_samples, start_time=start_time, 
+                        first_chunk_time=first_chunk_time, is_finished=True
+                    )
 
         def run_async_producer(
                 stop_event: threading.Event | None, 
@@ -345,7 +343,7 @@ class OrpheusGen:
                 # Convert to audio when we have enough tokens
                 if count % 7 == 0 and count > 27:                    
                     buffer_to_proc = buffer[-28:]
-                    audio_samples = self.convert_to_audio(buffer_to_proc, count)
+                    audio_samples = OrpheusGen.convert_to_audio(buffer_to_proc, count)
                     if audio_samples is not None:
                         yield audio_samples
 
@@ -376,7 +374,21 @@ class OrpheusGen:
         else:
             return None
 
-    def convert_to_audio(self, multiframe, count):
+    def send_gen_status_ui_message(self, 
+            text: str, num_samples: int, start_time: float, first_chunk_time: float, is_finished: bool
+    ) -> None:
+        duration = num_samples / SAMPLE_RATE
+        elapsed = max(time.time() - start_time, 0)
+        if first_chunk_time == 0:
+            ttfb = elapsed
+        else:
+            ttfb = first_chunk_time - start_time
+        L.d(f"xxx {ttfb:.3f}")
+        gen_status = GenStatus(text, duration, elapsed, ttfb, is_finished)
+        AppUtil.send_ui_message(self.ui_queue, GenStatusUiMessage(gen_status))
+
+    @staticmethod
+    def convert_to_audio(multiframe, count):
         """Convert token frames to audio."""
         # Import here to avoid circular imports
         from decoder import convert_to_audio as orpheus_convert_to_audio
@@ -386,7 +398,7 @@ class OrpheusGen:
     def ping(request_config: CompletionsConfig) -> str:
         """
         Pings server
-        Returns error message on fail, else empty string
+        Returns error message on fail, else empty string for success
         """
         json_data = request_config.request_dict.copy()
         json_data["max_tokens"] = MAX_TOKENS
