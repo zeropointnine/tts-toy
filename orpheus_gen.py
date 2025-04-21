@@ -52,7 +52,7 @@ class OrpheusGen:
                 synced_text_item = SyncedTextItem(AudioStreamer.tick_num, tts_content_item.raw_text)
                 Shared.synced_text_queue.append(synced_text_item)
                 return
-            L.d(f"generating audio for: {tts_text}")
+            # L.d(f"generating audio for: {tts_text}")
 
         log_text = TextMassager.massage_display_text_segment_for_log(tts_content_item.raw_text)
 

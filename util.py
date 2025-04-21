@@ -1,3 +1,4 @@
+import re
 import threading
 import time
 from typing import Callable
@@ -29,3 +30,23 @@ class Util:
             thread = threading.Thread(target=go, daemon=True)
             thread.start()
         return thread
+
+    @staticmethod
+    def replace_last_occurrence(original: str, old: str, new: str) -> str:
+        pattern = f"{re.escape(old)}(?!.*{re.escape(old)})"
+        return re.sub(pattern, new, original)
+
+    @staticmethod    
+    def replace_first_from_index(original: str, old: str, new: str, start_index: int) -> tuple[str, int]:
+        """
+        Replaces the first occurrence of 'old' substring with 'new' substring,
+        starting the search from 'start_index', and returns the new string along
+        with the replacement index.
+        """
+        start_index = max(start_index, 0)
+        index = original.find(old, start_index)        
+        if index == -1:
+            return (original, -1)
+        
+        transformed = original[:index] + new + original[index + len(old):]
+        return (transformed, index)    

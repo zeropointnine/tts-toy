@@ -82,17 +82,12 @@ class LinesModel:
         # where a "line" is a list of StyleTexts that get printed on a single line.
         self._lines: list[Line] = []
 
-        self._last_block_highlight = ""        
+        # Uses pretty involved, state-machine-like logic here...
+        self._highlight = ""        
+        self._highlight_cursor = -1
+        self._highlight_flag = False
+        
         self._is_dirty: bool = False
-
-        # testing
-        if False:
-            for i in range(20):
-                block = str(i) + " " + AppUtil.make_lorem_ipsum()
-                self.add_block(block)
-            self.add_block("")
-            self._is_dirty = True
-            self.print_blocks()
 
     def _set_width_height(self, w: int, h: int) -> None:
         if self.width == w and self.height == h:
@@ -104,17 +99,20 @@ class LinesModel:
     def clear(self) -> None:
         self._blocks.clear()
         self._lines.clear()
-        self._last_block_highlight = ""
+        self._highlight = ""
+        self._highlight_cursor = -1
 
     def add_block(self, block: str) -> None:
         if len(self._blocks) >= MAX_BLOCKS:
             del self._blocks[0]
         self._blocks.append(block)        
+        self._highlight_cursor = -1
         self._is_dirty = True
 
     def append_to_last_block(self, text_to_append: str) -> None:
         """Appends text to the last block and marks the model dirty."""
         if not self._blocks:
+            self._highlight_cursor = -1 # test
             self.add_block(text_to_append)
             self._is_dirty = True
             return
@@ -124,6 +122,7 @@ class LinesModel:
 
     def replace_last_block(self, new_block_text: str) -> None:
         """Replaces the last block and marks the model dirty."""
+        self._highlight_cursor = -1
         if not self._blocks:
             self.add_block(new_block_text)
             self._is_dirty = True
@@ -135,32 +134,32 @@ class LinesModel:
     def erase_last_block(self) -> None:
         if self._blocks:
             self._blocks.pop()
+        self._highlight_cursor = -1
         self._is_dirty = True
 
     def set_highlight(self, substring: str) -> None:
-        """ Highlights a substring in the last block if exists"""
-        self._last_block_highlight = substring
+        """ Highlights a substring in the last block if exists """
+        self._highlight = substring
+        self._highlight_flag = True
+        if self._highlight_cursor > -1:
+            self._highlight_cursor += 1 # tricky
         self._is_dirty = True
 
     def clear_highlight(self) -> None:
-        self._last_block_highlight = ""
+        self._highlight = ""
+        self._highlight_cursor = -1
         self._is_dirty = True
 
-    def _block_to_lines(self, block: str) -> list[Line]:
+    def _block_to_lines(self, block: str, is_last: bool) -> list[Line]:
 
         processed_block = block
 
-        # Apply highlight to the entire block text if the substring exists
-        if self._last_block_highlight and self._last_block_highlight in block:
-            # Apply simple formatting tags. Assumes highlight doesn't contain special chars.
-            # NOTE: This simple replace might have issues if the highlight string appears
-            # multiple times or interferes with existing formatting tags.
-            # A more robust solution might involve parsing existing tags first.
-            highlight_tag = f"[highlight]{self._last_block_highlight}[light]"
-            processed_block = block.replace(self._last_block_highlight, highlight_tag)
-        elif self._last_block_highlight:
-            L.d(f"Highlight '{self._last_block_highlight}' not found in block.")
-            # L.d(f"Block content: {block}") # Uncomment for verbose debugging
+        if self._highlight and is_last:
+            formatted = f"[highlight]{self._highlight}[light]"
+            processed_block, index = Util.replace_first_from_index(block, self._highlight, formatted, self._highlight_cursor)
+            if index > -1 and self._highlight_flag:
+                self._highlight_flag = False
+                self._highlight_cursor = index
 
         # "paragraph" = line of text without line breaks
         # Process the potentially modified block text
@@ -185,8 +184,9 @@ class LinesModel:
     def _regenerate(self) -> None:
         self._lines.clear()
         
-        for block in self._blocks:
-            lines = self._block_to_lines(block)
+        for i, block in enumerate(self._blocks):
+            is_last = (i == len(self._blocks) - 1)
+            lines = self._block_to_lines(block, is_last)
             self._lines.extend(lines)
 
         # Prevent more than one consecutive blank line
@@ -214,27 +214,31 @@ class LinesModel:
     def get_lines(self) -> list[Line]:
         """
         Returns the final lines output.
-        Does a recalculation if dirty.
+        Does a recalculation only if dirty flag set.
         """
         if self._is_dirty:
             self._is_dirty = False
             self._regenerate()
         return self._lines
 
-    def print_blocks(self) -> None:
-        """
-        For debuggging
-        """
+    # ---
+
+    def dev_populate(self) -> None:
+        for i in range(20):
+            block = str(i) + " " + AppUtil.make_lorem_ipsum()
+            self.add_block(block)
+        self.add_block("")
+        self._is_dirty = True
+        self.dev_print_blocks()
+
+    def dev_print_blocks(self) -> None:
         s = "\n" + ("-" * 80) + "\n"
         for i, block in enumerate(self._blocks):
             s += f"[{i}] {block}\n"
         s += ("-" * 80)
         L.d(s)
 
-    def print_lines(self) -> None:
-        """
-        For debuggging
-        """
+    def dev_print_lines(self) -> None:
         s = "\n" + ("-" * 80) + "\n"
         for i, line in enumerate(self._lines):
             s += f"[{i}] {line}\n"

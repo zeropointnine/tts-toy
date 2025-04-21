@@ -200,7 +200,7 @@ class AudioStreamer:
                 # Wait for a tts item, and timeout after 0.1s
                 try:
                     tts_item = self.tts_queue.get(block=True, timeout=0.1)
-                    L.d(f"TtsItem: {tts_item}")
+                    # L.d(f"TtsItem: {tts_item}")
                 except queue.Empty:
                     continue
 

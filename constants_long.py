@@ -6,14 +6,15 @@ class ConstantsLong:
 
 [title+b]Special commands:
 
-    [blue]!chat[light] or [blue]!c[light] - switch to "chat mode" 
-    [blue]!direct[light] or [blue]!d[light] - switch to "direct input mode"
+    [blue]!chat [medium]or [blue]!c[light] - switch to "chat mode" 
+    [blue]!direct [medium]or [blue]!d[light] - switch to "direct input mode"
 
-    voices:
-        [blue]!tara, !leah, !jess, !leo, !dan, !mia, !zac, !zoe, 
-        [blue]!random
+    [blue]!voice=name [medium]([medium+i]eg: [medium]"!voice=tara")
+    
+        [medium]default voices: [blue]tara, leah, jess, leo, dan, mia, zac, zoe 
+        [medium]also: [blue]random
 
-    [blue]!stop[light] or [blue]!s[light] - stop audio output
+    [blue]!stop [medium]or [blue]!s[light] - stop audio output
     [blue]!clear[light] - clear chat history 
 
     [blue]!save[light] - save audio output to disk (toggle) %save

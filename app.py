@@ -94,7 +94,7 @@ class App:
             return
         
         # Process command, if necessary
-        is_command = user_input.startswith("!") and user_input[1:].isalpha()
+        is_command = user_input.startswith("!") and len(user_input) >= 2 and user_input[1].isalpha()
         if is_command:
             command = user_input[1:]
             await self.process_command(command)
@@ -107,22 +107,36 @@ class App:
 
     async def process_command(self, command: str) -> None: 
         """
-        Processes a "command" and prints feedback in content area. 
+        Processes a "command" and prints feedback. 
         """
         was_chat_mode = Prefs().ix_mode
         was_voice_code = Prefs().voice_code
         feedback = ""
         should_print_menu = False
 
+        parts = command.split("=")
+        command = parts[0].strip()
+        command_value = parts[1].strip() if len(parts) > 1 else ""
+
+        # Legacy voice syntax (command itself is a voice name)
+        if command in Constants.ORPHEUS_VOICES:
+            command_value = command
+            command = "voice"
+
         match command:
 
-            case value if value in Constants.ORPHEUS_VOICE_CODES:
-                Prefs().voice_code = command
-                if Prefs().voice_code == "random":
-                    feedback = "Changed voice to: Random voice per generated audio segment"
+            case "voice":
+                if not command_value:
+                    feedback="No value for voice provided (eg, \"!voice=tara\")"
                 else:
-                    feedback = f"Changed voice to: {Prefs().voice_code}"
-            
+                    Prefs().voice_code = command_value
+                    if command_value == "random":
+                        feedback = "Changed voice to: Random voice per generated audio segment"
+                    else:
+                        feedback = f"Changed voice to: \"{command_value}\""
+                        if not command_value in Constants.ORPHEUS_VOICES:
+                            feedback += " (Value is not one of the default Orpheus voices)"
+          
             case "clear":
                 if Prefs().ix_mode == "chat":
                     self.llm_streamer_manager.init_history()
@@ -138,7 +152,7 @@ class App:
                     feedback =  "Nothing to stop"
                 else:
                     await self.stop_all()
-                    feedback =  "Stopped audio "
+                    feedback =  "Stopped "
 
             case value if value in ["direct", "d"]:
                 if Prefs().ix_mode != "direct":
@@ -188,7 +202,7 @@ class App:
             await self.stop_all() 
 
         if feedback:
-            self.print_to_content(f"[feedback+i]{feedback}")
+            self.print_full_message_to_content(f"[feedback+i]{feedback}")
 
         if should_print_menu:
             self.print_stroke_flag = True
@@ -211,7 +225,7 @@ class App:
         await self.stop_all()
 
         print_text = TextMassager.massage_user_input_for_print(user_input)
-        self.print_to_content(print_text) 
+        self.print_full_message_to_content(print_text) 
 
         self.print_placeholder("Sending request...")
 
@@ -222,7 +236,7 @@ class App:
                 
         user_input = TextMassager.transform_direct_mode_input_dev(user_input)
         
-        self.print_to_content(user_input)
+        self.print_full_message_to_content(user_input)
 
         await self.stop_all()
         time.sleep(0.1) # TODO revisit need for this
@@ -237,21 +251,21 @@ class App:
 
     # ---
 
-    def print_to_content(self, message: str) -> None:        
+    def print_full_message_to_content(self, message: str) -> None:        
         if Shared.placeholder_flag:
             Shared.placeholder_flag = False
             self.ui.content_control.model.erase_last_block()
         
         if self.print_stroke_flag:
             self.print_stroke_flag = False
-            self.print_to_content(f"[dark][STROKE]")
+            self.print_full_message_to_content(f"[dark][STROKE]")
 
         self.ui.content_control.model.add_block(message)
         self.ui.application.invalidate()
 
     def print_placeholder(self, text: str) -> None:
         placeholder_text = f"[dark+i]{text}"
-        self.print_to_content(placeholder_text)
+        self.print_full_message_to_content(placeholder_text)
         Shared.placeholder_flag = True
 
     def print_to_log(self, message: str) -> None:
@@ -277,7 +291,7 @@ class App:
             s += f"[feedback+i]You are in \"direct input mode.\"" 
             s += f"\n[feedback+i]Speech will be generated from your input."
 
-        self.print_to_content(s)
+        self.print_full_message_to_content(s)
 
     async def stop_all(self) -> None:
         """
@@ -312,7 +326,7 @@ class App:
         Updates a part of the UI based on ui_message's type 
         """
         if isinstance(ui_message, FullTextUiMessage):
-            self.print_to_content(ui_message.text)
+            self.print_full_message_to_content(ui_message.text)
 
         elif isinstance(ui_message, StreamedTextUiMessage):
             if Shared.placeholder_flag:

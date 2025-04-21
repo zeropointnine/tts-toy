@@ -64,8 +64,9 @@ class MainControlParser:
         current_line: Line = []
         current_line_length = 0
 
-        for i, (style, item) in enumerate(flat_parts):
+        for i, style_text in enumerate(flat_parts):
 
+            style, item = style_text
             style = MainControlParser.make_pt_style(style)
 
             item_len = len(item)

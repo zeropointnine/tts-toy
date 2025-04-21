@@ -70,6 +70,10 @@ Anecdotally, my dev system (Ryzen 7700 + 3080Ti) does the audio generation only 
 
 # Updates
 
+2025-04-21
+
+- Syntax for setting voice has changed to: "!voice=tara", etc. This allows for arbitrary voice names when using custom Orpheus finetunes.
+
 2025-04-20
 
 - The sentence or phrase of the currently playing audio segment now highlights in realtime.
