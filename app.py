@@ -317,7 +317,7 @@ class App:
                     multiplier_string = ""
                 else:
                     multiplier_string = f"= {multiplier:.1f}x" 
-                stat_line = f"elapsed {elapsed_string} ttfb {ttfb_string} duration {duration_string} {multiplier_string}"
+                stat_line = f"Elapsed: {elapsed_string} TTFB: {ttfb_string} Length: {duration_string} {multiplier_string}"
 
             if is_finished:
                 output = "[medium]" + text + "\n"

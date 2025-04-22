@@ -4,7 +4,7 @@ import queue
 
 import numpy as np
 from scipy.io.wavfile import write as write_wav
-from app_types import LogUiMessage, SoundFileItem, UiMessage
+from app_types import LogUiMessage, MessageAudio, UiMessage
 from app_util import AppUtil
 from constants import Constants
 from l import L
@@ -16,34 +16,37 @@ class SaveWavUtil:
 
     @staticmethod
     def save_with_ui_feedback(
-        sound_file_item: SoundFileItem, is_truncated: bool, ui_queue: queue.Queue[UiMessage]
+        message_audio: MessageAudio, is_truncated: bool, ui_queue: queue.Queue[UiMessage]
     ) -> None:
         """ 
         Runs in fire-and-forget thread.
         On complete, sends success or error message to the ui queue.
         """
-        file_path = SaveWavUtil.make_file_path(sound_file_item, is_truncated)
+        file_path = SaveWavUtil.make_file_path(message_audio, is_truncated)
 
         def go():
-            err = SaveWavUtil.save_wav_file(sound_file_item.sound_data, file_path)
-            if err:
-                L.d(f"save error: {err}")
-                AppUtil.send_ui_message(ui_queue, LogUiMessage("[error]" + err))
+            result = SaveWavUtil.save_wav_file(message_audio.blocks, file_path)
+            if isinstance(result, str):
+                error_message = result
+                L.d(f"save error: {error_message}")
+                AppUtil.send_ui_message(ui_queue, LogUiMessage("Error: " + error_message))
             else:
+                duration_seconds = result
                 L.d(f"saved {"(truncated)" if is_truncated else ""}")
-                AppUtil.send_ui_message(ui_queue, LogUiMessage(f"Saved: {os.path.basename(file_path)}"))
+                s = f"Saved: {os.path.basename(file_path)} ({duration_seconds:.1f}s)"
+                AppUtil.send_ui_message(ui_queue, LogUiMessage(s))
 
         Util.run_in_thread(go)
 
     @staticmethod
-    def make_file_path(sound_file_item: SoundFileItem, is_truncated: bool) -> str:
+    def make_file_path(message_audio: MessageAudio, is_truncated: bool) -> str:
         
         fn = datetime.datetime.now().strftime("%y%m%d_%H%M%S") + " "
-        if sound_file_item.voice_code:
-            fn += "[" + sound_file_item.voice_code + "] "
+        if message_audio.voice_code:
+            fn += "[" + message_audio.voice_code + "] "
         if is_truncated:
             fn += "[truncated] "
-        fn += TextMassager.massage_text_for_filename(sound_file_item.text, 25)
+        fn += TextMassager.massage_text_for_filename(message_audio.text, 25)
         fn = fn.lstrip("_")
         fn = fn.rstrip(".")
         fn += ".wav"
@@ -52,8 +55,8 @@ class SaveWavUtil:
         return file_path
 
     @staticmethod
-    def save_wav_file(data: list[np.ndarray], file_path: str) -> str:
-        """ Returns error message on fail"""
+    def save_wav_file(data: list[np.ndarray], file_path: str) -> float | str:
+        """ Returns duration in seconds on success, error message string on fail"""
 
         if not data:
             return "Save wav file: Aborted, no data"
@@ -64,7 +67,7 @@ class SaveWavUtil:
                  return "Save wav file: Aborted, data not mono"
             full_audio = full_audio.astype(Constants.DTYPE_NP)
             write_wav(file_path, Constants.SAMPLERATE, full_audio)
-            return ""
-
+            seconds = full_audio.size / Constants.SAMPLERATE
+            return seconds
         except Exception as e:
             return f"Save wav file error: {e}"

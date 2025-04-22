@@ -112,12 +112,25 @@ class GenStatus(NamedTuple):
     def make_empty() -> GenStatus:
         return GenStatus("", 0, 0, 0, False)
 
-class SoundFileItem:
+class MessageAudio:
     """
-    Accumulates the generated sound data for an entire message,
-    which gets used to save it to disk.
+    Accumulates the audio data for an entire message.
     """
-    def __init__(self, text: str, voice_code: str):
+    def __init__(self, text: str, voice_code: str, keeps_data: bool):
+        
+        # The 'accumulated' text of the message. 
+        # # (At end of message, should ofc match the original message's text)
         self.text = text
+        
+        # The voice code used to generate the audio
         self.voice_code = voice_code
-        self.sound_data: list[np.ndarray] = []
+        
+        # When True, accumulates the audio data as it is generated
+        # in order to be saved to disk on message complete.
+        self.keeps_data = keeps_data
+
+        self.blocks: list[np.ndarray] = []
+
+        # The length of the audio data, calculated independently of the data array itself.
+        # Used for determining audio duration when keeps_data is False.
+        self.total_size: int = 0

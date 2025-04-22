@@ -10,7 +10,7 @@ class Color:
         "darkest": "#333333",
         "bg": "#222222",
 
-        "blue": "#0088ff",
+        "blue": "#4488ff",
         "blue_dark": "#005599",
         "green": "#66aa66",
         "green_dark": "#336633",

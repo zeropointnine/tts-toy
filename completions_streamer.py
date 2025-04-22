@@ -160,7 +160,7 @@ class CompletionsStreamer:
             # Log completion time for this specific stream.
             elapsed = time.time() - start_time
             elapsed = AppUtil.elapsed_string(elapsed)
-            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"Chat response stream complete ({elapsed})"))
+            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"Chat response text stream complete ({elapsed})"))
 
             return full_response_content, ""
 

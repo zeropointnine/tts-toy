@@ -48,6 +48,8 @@ class TextMassager:
 
         text = text.lower()
 
+        # Remove all ASCII control characters (0x00–0x1F and 0x7F)
+        text = re.sub(r'[\x00-\x1F\x7F]', '', text)
         # Strip all chars except alpha, digit, space and underscore
         text = re.sub(r'[^\w\s]', '', text)
         # Replace spaces with underscores

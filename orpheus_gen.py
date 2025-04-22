@@ -383,7 +383,6 @@ class OrpheusGen:
             ttfb = elapsed
         else:
             ttfb = first_chunk_time - start_time
-        L.d(f"xxx {ttfb:.3f}")
         gen_status = GenStatus(text, duration, elapsed, ttfb, is_finished)
         AppUtil.send_ui_message(self.ui_queue, GenStatusUiMessage(gen_status))
 
@@ -430,6 +429,5 @@ END_TOKEN_IDS = [128009, 128260, 128261, 128257]
 CUSTOM_TOKEN_PREFIX = "<custom_token_"
 
 # Default value is 1200 (~15 seconds)
-# Using higher value here for some extra headroom.
-# FYI, also unfortunately allows for longer "hallucinations" as well
+# Using higher value here for some extra headroom just in case.
 MAX_TOKENS = 1800

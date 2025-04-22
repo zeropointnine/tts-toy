@@ -70,7 +70,7 @@ class AudioStreamer:
             self, 
             audio_gen, 
             stop_event: threading.Event,
-            sound_file_item: SoundFileItem | None
+            message_audio: MessageAudio | None
         ):
         """
         Feeds the audio queue with fixed-size blocks from the audio generator.
@@ -105,8 +105,10 @@ class AudioStreamer:
 
                     try:
                         self.audio_buffer_queue.put(block_to_queue, block=True, timeout=0.1)
-                        if sound_file_item:
-                            sound_file_item.sound_data.append(block_to_queue)
+                        if message_audio:
+                            message_audio.total_size += block_to_queue.size
+                            if message_audio.keeps_data:
+                                message_audio.blocks.append(block_to_queue)
                     except queue.Full:
                         L.w(f"Audio queue full")
                     except Exception as e:
@@ -175,7 +177,7 @@ class AudioStreamer:
         Checks stop_event to allow interruption
         """
 
-        sound_file_item: SoundFileItem | None = None
+        message_audio: MessageAudio | None = None
 
         try:
             # Initialize the stream once
@@ -206,10 +208,15 @@ class AudioStreamer:
 
                 # Handle end-marker
                 if isinstance(tts_item, TtsEndItem):
-                    if sound_file_item:
-                        if sound_file_item.sound_data:
-                            SaveWavUtil.save_with_ui_feedback(sound_file_item, False, self.ui_queue)
-                        sound_file_item = None
+                    if message_audio:
+                        duration = message_audio.total_size / SAMPLERATE
+                        if message_audio.keeps_data and message_audio.blocks:
+                            SaveWavUtil.save_with_ui_feedback(message_audio, False, self.ui_queue)
+                            message_audio = None
+                        else:
+                            s = f"Audio playback complete (length: {duration:.1f}s)"
+                            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(s))
+                    
                     self.tts_queue.task_done()
                     continue
 
@@ -217,28 +224,31 @@ class AudioStreamer:
 
                 tts_content_item = cast(TtsContentItem, tts_item)
 
-                if tts_content_item.is_message_start and Prefs().save_audio_to_disk:
-                    # Init sound file item 
-                    if sound_file_item:
-                        L.w("SoundFileItem already exists, check logic")
-                    L.d("created SoundFileItem")
-                    sound_file_item = SoundFileItem(text=tts_content_item.raw_text, voice_code=tts_content_item.voice)
+                if tts_content_item.is_message_start:
+                    if message_audio:
+                        L.w("MessageDataitem already exists, check logic")
+                    L.d("created MessageDataItem")
+                    message_audio = MessageAudio(
+                        text=tts_content_item.raw_text, 
+                        voice_code=tts_content_item.voice,
+                        keeps_data=Prefs().save_audio_to_disk
+                    )
                     
-                if sound_file_item and not tts_content_item.is_message_start:
-                    sound_file_item.text += tts_content_item.raw_text
+                if message_audio and not tts_content_item.is_message_start:
+                    message_audio.text += tts_content_item.raw_text
 
                 # Do orpheus inference. Blocks
                 audio_data = self.orpheus_gen.audio_chunk_generator(
                     request_config=self.orpheus_completions_config, tts_content_item = tts_content_item)
 
                 # Feed the audio queue. Blocks.
-                self.queue_feeder(audio_data, self.stop_event, sound_file_item) 
+                self.queue_feeder(audio_data, self.stop_event, message_audio) 
 
                 # Save if sound file item and stop event 
-                if self.stop_event.is_set() and sound_file_item: 
-                    if sound_file_item.sound_data:
-                        SaveWavUtil.save_with_ui_feedback(sound_file_item, True, self.ui_queue)
-                    sound_file_item = None
+                if self.stop_event.is_set() and message_audio and message_audio.keeps_data: 
+                    if message_audio.blocks:
+                        SaveWavUtil.save_with_ui_feedback(message_audio, True, self.ui_queue)
+                    message_audio = None
 
                 self.tts_queue.task_done()
 
