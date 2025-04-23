@@ -214,7 +214,7 @@ class AudioStreamer:
                             SaveWavUtil.save_with_ui_feedback(message_audio, False, self.ui_queue)
                             message_audio = None
                         else:
-                            s = f"Audio playback complete (length: {duration:.1f}s)"
+                            s = f"Generation complete (audio length: {duration:.1f}s)"
                             AppUtil.send_ui_message(self.ui_queue, LogUiMessage(s))
                     
                     self.tts_queue.task_done()

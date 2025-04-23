@@ -178,11 +178,11 @@ class App:
             case "save":
                 if Prefs().save_audio_to_disk:
                     Prefs().save_audio_to_disk = False
-                    feedback = "\"Save audio output to disk\" set to: Off"
+                    feedback = "\"Save audio output to disk\" set to: off"
                 else:
                     try:
                         os.makedirs(Prefs().audio_save_dir, exist_ok=True)
-                        feedback = "\"Save audio output to disk\" set to: On"
+                        feedback = "\"Save audio output to disk\" set to: on"
                         feedback += f"\n[feedback_dark+i]{Prefs().audio_save_dir}"
                         Prefs().save_audio_to_disk = True
                     except Exception as e:
@@ -359,11 +359,15 @@ class App:
         while True:
             try:
                 ui_message = self.ui_queue.get(block=False) 
-                self.print_ui_message(ui_message)
+
+                loop = asyncio.get_running_loop() 
+                loop.call_soon_threadsafe(self.print_ui_message, ui_message)
+
                 self.ui_queue.task_done()
+
             except queue.Empty:
                 # This is the one queue handler which should be the fastest loop
-                await asyncio.sleep(0.033)
+                await asyncio.sleep(1/30)
 
     def print_ui_message(self, ui_message: UiMessage) -> None:
         """ 
@@ -397,10 +401,14 @@ class App:
                     pass
         
     async def on_enter(self) -> None:
-        user_input = self.ui.text_area.text
-        self.ui.text_area.text = ""
-        await self.process_user_input(user_input)
+        async def go():
+            user_input = self.ui.text_area.text
+            self.ui.text_area.text = ""
+            await self.process_user_input(user_input)
 
+        loop = asyncio.get_running_loop() 
+        _ = asyncio.run_coroutine_threadsafe(go(), loop)
+         
 # ---
 
 if __name__ == "__main__":
