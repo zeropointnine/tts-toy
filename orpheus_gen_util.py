@@ -1,15 +1,10 @@
 import threading
-from orpheus_constants import OrpheusConstants
-
 
 class OrpheusGenUtil:
     """ Helper functions """
 
     @staticmethod
     def format_orpheus_prompt(prompt: str, voice: str) -> str:
-
-        if voice not in OrpheusConstants.STOCK_VOICES:
-            voice = OrpheusConstants.STOCK_VOICE_DEFAULT
 
         # Format similar to how engine_class.py does it with special tokens
         result = f"{voice}: {prompt}"
@@ -32,7 +27,7 @@ class OrpheusGenUtil:
                 # printt("Tokens Decoder: Stop event detected.")
                 break # Exit the token processing loop
 
-            token = OrpheusGenUtil.turn_token_into_id(token_text, count)
+            token = OrpheusGenUtil.parse_token_string(token_text, count)
             if token is not None and token > 0:
                 buffer.append(token)
                 count += 1
@@ -45,19 +40,15 @@ class OrpheusGenUtil:
                         yield audio_samples
 
     @staticmethod
-    def turn_token_into_id(token_string, index):
+    def parse_token_string(token_string: str, index) -> int | None:
         """Convert token string to numeric ID for audio processing."""
-        # Strip whitespace
+
         token_string = token_string.strip()
         
-        # Find the last token in the string
-        last_token_start = token_string.rfind(CUSTOM_TOKEN_PREFIX)
-        
-        if last_token_start == -1:
+        last_token_index = token_string.rfind(CUSTOM_TOKEN_PREFIX)
+        if last_token_index == -1:
             return None
-        
-        # Extract the last token
-        last_token = token_string[last_token_start:]
+        last_token = token_string[last_token_index:]
         
         # Process the last token
         if last_token.startswith(CUSTOM_TOKEN_PREFIX) and last_token.endswith(">"):

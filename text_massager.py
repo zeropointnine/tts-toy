@@ -8,11 +8,17 @@ class TextMassager:
 
     @staticmethod
     def massage_assistant_text_segment_for_tts(text: str) -> str:
-        text = TextMassager.remove_non_alnum_words(text)
-        text = TextMassager._double_asterisk_words_to_caps(text) 
-        text = emoji.replace_emoji(text, replace=' ')
-        text = text.strip()
-        return text
+        s = TextMassager.remove_non_alnum_words(text)
+        s = TextMassager._double_asterisk_words_to_caps(s) 
+        s = emoji.replace_emoji(s, replace=' ')
+        s = s.strip()
+        
+        # Disallow text w/o any "content characters"
+        has_content = any(c.isalpha() or c.isdigit() for c in s)
+        if not has_content:
+            return ""
+        
+        return s
 
     @staticmethod
     def massage_display_text_segment_for_log(text: str) -> str:

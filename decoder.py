@@ -1,5 +1,5 @@
 """
-Script from "orpheus-tts-local",
+Script from orpheus-tts-local:
 https://github.com/isaiahbjork/orpheus-tts-local
 """
 

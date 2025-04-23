@@ -64,8 +64,6 @@ class LinesModel:
     TODO: do add-block etc optimizations again
     """
 
-    MAX_BLOCKS = 50
-
     def __init__(self, color_code: str, bottom_aligned: bool):        
         
         self.color_code = color_code
@@ -225,7 +223,7 @@ class LinesModel:
 
     def dev_populate(self) -> None:
         for i in range(20):
-            block = str(i) + " " + AppUtil.make_lorem_ipsum()
+            block = str(i) + " " + Util.make_lorem_ipsum()
             self.add_block(block)
         self.add_block("")
         self._is_dirty = True

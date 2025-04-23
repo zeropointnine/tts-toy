@@ -17,3 +17,7 @@ class Shared:
 
     has_imported_decoder: bool = False
     placeholder_flag = False
+
+    # Increments on each sound device callback (Not ideal place for this)
+    sd_tick_num: int = 0
+    sd_test = True

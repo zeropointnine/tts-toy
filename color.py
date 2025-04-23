@@ -4,7 +4,7 @@ class Color:
 
     NAME_TO_COLOR = {
         "white": "#ffffff",
-        "light": "#e3eaf2",
+        "light": "#d3dae2",
         "medium": "#777777",
         "dark": "#555555",
         "darkest": "#333333",

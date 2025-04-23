@@ -40,8 +40,14 @@ class MainControlParser:
         while pos < len(input_string):
             match = pattern.match(input_string, pos)
             if not match:
-                # Skip unrecognized parts, like lone '['
-                pos += 1
+                # Handle unrecognized parts
+                if pos < len(input_string) and input_string[pos] == '[':
+                    # Treat lone '[' or start of unrecognized tag as literal text
+                    flat_parts.append((current_style, '['))
+                    pos += 1
+                else:
+                    # Skip other unrecognized characters (should be rare with current regex)
+                    pos += 1
                 continue
             tag, text = match.groups()
             if tag: # Matched a style tag like [ffffff] or [ff0000+i]

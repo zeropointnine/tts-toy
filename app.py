@@ -72,7 +72,7 @@ class App:
 
         def go():
             AppUtil.import_decoder_with_feedback(self.ui_queue)
-            AppUtil.ping_orpheus_server_with_feedback(Prefs().orpheus_completions_config, self.ui_queue) 
+            AppUtil.ping_tts_server_with_feedback(Prefs().orpheus_completions_config, self.ui_queue) 
         Util.run_in_thread(go, 0.5) # allows app to show UI before doing heavy load
 
     async def run(self):
@@ -87,7 +87,7 @@ class App:
                 LogUiMessage(f"[error]Unexpected error. Could be bad. Consider restart.\n{e}") 
             )
         finally:
-            pass
+            await self.stop_all()
 
     async def process_user_input(self, user_input: str) -> None:
 
@@ -350,7 +350,7 @@ class App:
         self.llm_streamer_manager.abort()
         self.audio_streamer.clear_queues()
         AppUtil.clear_queue(self.ui_queue)
-        Shared.synced_text_queue.clear()        
+        Shared.synced_text_queue.clear()
         self.ui.content_control.model.clear_highlight()
 
     async def ui_message_queue_loop(self):
@@ -390,7 +390,7 @@ class App:
         elif isinstance(ui_message, GenStatusUiMessage):
             self.print_gen_status(ui_message.item)
         elif isinstance(ui_message, AudioBufferUiMessage):
-            self.ui.update_audio_status(ui_message.seconds)
+            self.ui.update_audio_buffer_status(ui_message.seconds)
             if ui_message.got_depleted:
                 if self.tts_queue.qsize() == 0:
                     # Full audio message has finished

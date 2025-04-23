@@ -61,23 +61,22 @@ class TtsContentItem(TtsItem):
     """
     def __init__(
         self,
+        text: str,
         raw_text: str,
-        should_massage: bool,
         voice: str,
         is_message_start: bool
     ):
-        self.raw_text = raw_text
+        # The text prompt
+        self.text = text
 
-        self.should_massage = should_massage
-        """ 
-        Massage text for Orpheus model to prevent glitches, etc. 
-        "direct mode" deliberately sets this to False
-        """
+        # The raw/unsanitized/display text from which the `text` is derived
+        self.raw_text = raw_text
         
+        # The voice which will be used to render the audio
         self.voice = voice
 
+        # Is the first text segment of a full message
         self.is_message_start = is_message_start
-        """ Is the first text segment of a full message """
 
     def __str__(self) -> str:
         return f"<TtsContentItem - text: [{ Util.truncate_string(self.raw_text, 100) }], is_message_start: { self.is_message_start }>"

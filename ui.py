@@ -1,7 +1,7 @@
 from typing import Callable
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.layout.containers import HSplit, Window, VSplit
+from prompt_toolkit.layout.containers import HSplit, Window, VSplit, WindowAlign
 from prompt_toolkit.widgets import HorizontalLine, VerticalLine, TextArea
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
@@ -24,8 +24,8 @@ class Ui:
         self.title_buffer = Buffer()
         self.title_control = FormattedTextControl(lambda: self.title_buffer.text)
 
-        self.audio_status_text = AppUtil.make_empty_line()
-        self.audio_status_control = FormattedTextControl(lambda: self.audio_status_text)
+        self.audio_buffer_text = AppUtil.make_empty_line()
+        self.audio_buffer_control = FormattedTextControl(lambda: self.audio_buffer_text)
 
         self.content_control = MainControl("light", False)
         self.log_control = MainControl("dark", True)
@@ -43,7 +43,10 @@ class Ui:
             VSplit([
                 Window(content=self.title_control, height=1, style="class:title"),
                 VerticalLine(),
-                Window(content=self.audio_status_control, height=1, width=50, wrap_lines=False, style="class:audio_status")
+                Window(
+                    content=self.audio_buffer_control, 
+                    height=1, width=50, wrap_lines=False, style="class:audio_status", align=WindowAlign.RIGHT
+                )
             ], padding=1),
             
             HorizontalLine(),
@@ -73,7 +76,7 @@ class Ui:
 
         style = Style.from_dict({
             "title": f"{Color.hex('dark')}",
-            "audio_status": f"{Color.hex('light')}",
+            "audio_status": f"{Color.hex('highlight')}",
 
             "content": f"{Color.hex('assistant')}",
             "log": f"{Color.hex('dark')}",
@@ -103,12 +106,10 @@ class Ui:
         async def _(_): 
             await self.on_enter()
 
-    def update_audio_status(self, seconds: float) -> None:        
-        self.audio_status_text = str(seconds)
+    def update_audio_buffer_status(self, seconds: float) -> None:        
+        epsilon = 0.1 / 2
         s = "buffer: "
-        s += f"{seconds:.1f}s" if seconds > 0 else "0s"
-        color_name = "light" if seconds > 0 else "dark"
-        style = Color.as_pt_style(color_name)
-        self.audio_status_text = [ (style, s) ]
+        s += f"{seconds:.1f}s " if seconds > epsilon else "0s "
+        self.audio_buffer_text = s if seconds > epsilon else [ (Color.as_pt_style("dark"), s) ]
         self.application.invalidate() # TODO unnecessarily costly? not sure; alternatives?
 
