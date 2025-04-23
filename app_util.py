@@ -3,10 +3,14 @@ import os
 import queue
 import random
 import tempfile
+
+import requests
 from app_types import *
 from constants import Constants
 from l import L
 from completions_config import CompletionsConfig
+from orpheus_constants import OrpheusConstants
+from orpheus_gen_util import OrpheusGenUtil
 from shared import Shared
 from util import Util
 
@@ -31,11 +35,10 @@ class AppUtil:
         
     @staticmethod
     def ping_orpheus_server_with_feedback(orpheus_completions_config: CompletionsConfig, ui_queue: queue.Queue) -> None:
-        from orpheus_gen import OrpheusGen
 
         AppUtil.send_ui_message(ui_queue, LogUiMessage(f"Pinging Orpheus LLM server {orpheus_completions_config.url}"))
 
-        error_message = OrpheusGen.ping(orpheus_completions_config)        
+        error_message = AppUtil.ping_tts_server(orpheus_completions_config)        
         if error_message:
             AppUtil.send_ui_message(ui_queue, LogUiMessage("[error]" + error_message))
 
@@ -94,8 +97,8 @@ class AppUtil:
         for i, text_segment in enumerate(text_segments):
             voice = voice_code
             if voice_code == "random":
-                i = random.randrange(0, len(Constants.ORPHEUS_VOICES))
-                voice = Constants.ORPHEUS_VOICES[i]
+                i = random.randrange(0, len(OrpheusConstants.STOCK_VOICES))
+                voice = OrpheusConstants.STOCK_VOICES[i]
 
             is_message_start = (has_message_start and i == 0)
             item = TtsContentItem(
@@ -127,3 +130,30 @@ class AppUtil:
     @staticmethod
     def is_empty_line(line: Line) -> bool:
         return len(line) == 0 or (len(line) == 1 and not line[0][1].strip())
+
+    @staticmethod
+    def ping_tts_server(request_config: CompletionsConfig) -> str:
+        """
+        Pings server
+        Returns error message on fail, else empty string for success
+        """
+        json_data = request_config.request_dict.copy()
+        json_data["max_tokens"] = OrpheusConstants.MAX_TOKENS
+        json_data["prompt"] = OrpheusGenUtil.format_orpheus_prompt("hi", OrpheusConstants.STOCK_VOICE_DEFAULT)
+        headers = { "Content-Type": "application/json" }
+        
+        try:
+            response = requests.post(
+                url=request_config.url, 
+                headers=headers, 
+                json=json_data, 
+                stream=True, 
+                timeout=5
+            )
+            if response.status_code != 200:
+                return f"Orpheus service request failed: {response.status_code} - {response.text}"
+        except Exception as e: 
+            return f"Orpheus service request failed: {e}"
+
+        # okay        
+        return ""

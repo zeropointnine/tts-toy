@@ -1,8 +1,8 @@
 import re
 
 import emoji
-from constants import Constants
 from constants_long import ConstantsLong
+from orpheus_constants import OrpheusConstants
 
 class TextMassager:
 
@@ -110,7 +110,7 @@ def remove_orpheus_emote_tags(text):
     """
     
     # Escape tags for regex and join with OR operator '|'
-    tag_pattern = "|".join(re.escape(t) for t in Constants.ORPHEUS_EMOTE_TAGS) # -> '<laugh>|<chuckle>' etc
+    tag_pattern = "|".join(re.escape(t) for t in OrpheusConstants.STOCK_EMOTE_TAGS) # -> '<laugh>|<chuckle>' etc
 
     # Define punctuation characters we care about for rule 3
     # We escape them to be safe inside a regex character class

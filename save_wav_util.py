@@ -6,8 +6,8 @@ import numpy as np
 from scipy.io.wavfile import write as write_wav
 from app_types import LogUiMessage, MessageAudio, UiMessage
 from app_util import AppUtil
-from constants import Constants
 from l import L
+from orpheus_constants import OrpheusConstants
 from prefs import Prefs
 from text_massager import TextMassager
 from util import Util
@@ -65,9 +65,9 @@ class SaveWavUtil:
             full_audio = np.concatenate(data)
             if full_audio.ndim > 1:                 
                  return "Save wav file: Aborted, data not mono"
-            full_audio = full_audio.astype(Constants.DTYPE_NP)
-            write_wav(file_path, Constants.SAMPLERATE, full_audio)
-            seconds = full_audio.size / Constants.SAMPLERATE
+            full_audio = full_audio.astype(OrpheusConstants.DTYPE_NP)
+            write_wav(file_path, OrpheusConstants.SAMPLERATE, full_audio)
+            seconds = full_audio.size / OrpheusConstants.SAMPLERATE
             return seconds
         except Exception as e:
             return f"Save wav file error: {e}"

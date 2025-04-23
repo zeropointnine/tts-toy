@@ -9,9 +9,10 @@ import asyncio
 
 from app_types import *
 from app_util import AppUtil
-from constants import Constants
 from l import L
 from completions_config import CompletionsConfig
+from orpheus_constants import OrpheusConstants
+from orpheus_gen_util import OrpheusGenUtil
 from shared import Shared
 from text_massager import TextMassager
 AudioChunkQueue = queue.Queue[np.ndarray | bytes | None]
@@ -28,13 +29,15 @@ class OrpheusGen:
             self, 
             stop_event: threading.Event, 
             ui_queue: queue.Queue[UiMessage],
-            get_audio_queue_size: Callable[[], int]
+            get_audio_queue_size: Callable[[], int],
+            request_config: CompletionsConfig
     ):        
         self.stop_event = stop_event
         self.ui_queue = ui_queue
         self.get_audio_queue_size = get_audio_queue_size
+        self.request_config = request_config
 
-    def audio_chunk_generator(self, request_config: CompletionsConfig, tts_content_item: TtsContentItem):
+    def audio_chunk_generator(self, tts_content_item: TtsContentItem):
         """
         Does the actual audio inference for a discrete text segment.
         Yields chunks of data via streamed completions service request as they become available.
@@ -65,7 +68,7 @@ class OrpheusGen:
         self.is_first_chunk = True
 
         sync_token_gen = self.make_request_and_generate_tokens(
-            request_config=request_config,
+            request_config=self.request_config,
             prompt=tts_text,
             voice=tts_content_item.voice
         )
@@ -100,7 +103,7 @@ class OrpheusGen:
             try:
                 # Instantiate the generators before the loop
                 token_gen = token_gen_wrapper() # Instantiate the wrapper
-                decoder_gen = self.tokens_decoder(token_gen) # Pass the instance
+                decoder_gen = OrpheusGenUtil.tokens_decoder(token_gen, self.stop_event) # Pass the instance
 
                 async for audio_chunk in decoder_gen:
 
@@ -254,7 +257,7 @@ class OrpheusGen:
 
         headers = { "Content-Type": "application/json" }
         json_data = request_config.request_dict.copy()
-        json_data["prompt"] = OrpheusGen.format_orpheus_prompt(prompt, voice)
+        json_data["prompt"] = OrpheusGenUtil.format_orpheus_prompt(prompt, voice)
         json_data["stream"] = True # !important
         
         try:
@@ -310,74 +313,10 @@ class OrpheusGen:
     # ---
     # Helper functions
 
-    @staticmethod
-    def format_orpheus_prompt(prompt: str, voice: str) -> str:
-
-        if voice not in Constants.ORPHEUS_VOICES:
-            voice = Constants.ORPHEUS_VOICE_DEFAULT
-
-        # Format similar to how engine_class.py does it with special tokens
-        result = f"{voice}: {prompt}"
-        
-        special_start = "<|audio|>"  # Using the additional_special_token from config
-        special_end = "<|eot_id|>"   # Using the eos_token from config
-        result = f"{special_start}{result}{special_end}"
-
-        return result
-
-    async def tokens_decoder(self, token_gen):
-        """Asynchronous token decoder that converts token stream to audio stream."""
-        buffer = []
-        count = 0
-
-        async for token_text in token_gen:
-            if self.stop_event.is_set():
-                # printt("Tokens Decoder: Stop event detected.")
-                break # Exit the token processing loop
-
-            token = self.turn_token_into_id(token_text, count)
-            if token is not None and token > 0:
-                buffer.append(token)
-                count += 1
-                
-                # Convert to audio when we have enough tokens
-                if count % 7 == 0 and count > 27:                    
-                    buffer_to_proc = buffer[-28:]
-                    audio_samples = OrpheusGen.convert_to_audio(buffer_to_proc, count)
-                    if audio_samples is not None:
-                        yield audio_samples
-
-    @staticmethod
-    def turn_token_into_id(token_string, index):
-        """Convert token string to numeric ID for audio processing."""
-        # Strip whitespace
-        token_string = token_string.strip()
-        
-        # Find the last token in the string
-        last_token_start = token_string.rfind(CUSTOM_TOKEN_PREFIX)
-        
-        if last_token_start == -1:
-            return None
-        
-        # Extract the last token
-        last_token = token_string[last_token_start:]
-        
-        # Process the last token
-        if last_token.startswith(CUSTOM_TOKEN_PREFIX) and last_token.endswith(">"):
-            try:
-                number_str = last_token[14:-1]
-                token_id = int(number_str) - 10 - ((index % 7) * 4096)
-                # print("token string:", token_string, "token id:", token_id)
-                return token_id
-            except ValueError:
-                return None
-        else:
-            return None
-
     def send_gen_status_ui_message(self, 
             text: str, num_samples: int, start_time: float, first_chunk_time: float, is_finished: bool
     ) -> None:
-        duration = num_samples / SAMPLE_RATE
+        duration = num_samples / OrpheusConstants.SAMPLERATE
         elapsed = max(time.time() - start_time, 0)
         if first_chunk_time == 0:
             ttfb = elapsed
@@ -386,49 +325,7 @@ class OrpheusGen:
         gen_status = GenStatus(text, duration, elapsed, ttfb, is_finished)
         AppUtil.send_ui_message(self.ui_queue, GenStatusUiMessage(gen_status))
 
-    @staticmethod
-    def convert_to_audio(multiframe, count):
-        """Convert token frames to audio."""
-        # Import here to avoid circular imports
-        from decoder import convert_to_audio as orpheus_convert_to_audio
-        return orpheus_convert_to_audio(multiframe, count)
-
-    @staticmethod
-    def ping(request_config: CompletionsConfig) -> str:
-        """
-        Pings server
-        Returns error message on fail, else empty string for success
-        """
-        json_data = request_config.request_dict.copy()
-        json_data["max_tokens"] = MAX_TOKENS
-        json_data["prompt"] = OrpheusGen.format_orpheus_prompt("hi", Constants.ORPHEUS_VOICE_DEFAULT)
-        headers = { "Content-Type": "application/json" }
-        
-        try:
-            response = requests.post(
-                url=request_config.url, 
-                headers=headers, 
-                json=json_data, 
-                stream=True, 
-                timeout=5
-            )
-            if response.status_code != 200:
-                return f"Orpheus service request failed: {response.status_code} - {response.text}"
-        except Exception as e: 
-            return f"Orpheus service request failed: {e}"
-
-        # okay        
-        return ""
-
 # ---
-
-# SNAC model uses 24kHz
-SAMPLE_RATE = 24000  
 
 START_TOKEN_ID = 128259
 END_TOKEN_IDS = [128009, 128260, 128261, 128257]
-CUSTOM_TOKEN_PREFIX = "<custom_token_"
-
-# Default value is 1200 (~15 seconds)
-# Using higher value here for some extra headroom just in case.
-MAX_TOKENS = 1800

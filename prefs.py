@@ -76,8 +76,7 @@ class Prefs:
             self.ix_mode = "direct"
 
         self._voice_code = prefs_dict.get("voice_code", "")
-        if self._voice_code not in Constants.ORPHEUS_VOICE_CODES:
-            self.voice_code = Constants.ORPHEUS_VOICE_DEFAULT
+        self._voice_code = self._voice_code[:50]
 
         b = prefs_dict.get("save_audio_to_disk", None)
         if b is not None:

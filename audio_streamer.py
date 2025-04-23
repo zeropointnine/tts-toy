@@ -44,7 +44,8 @@ class AudioStreamer:
         self.orpheus_gen = OrpheusGen(
             stop_event=self.stop_event, 
             ui_queue=self.ui_queue, 
-            get_audio_queue_size=self.get_audio_queue_size
+            get_audio_queue_size=self.get_audio_queue_size,
+            request_config=self.orpheus_completions_config, 
         )
 
         # Audio buffer data queue, which gets fed to the sound device
@@ -238,8 +239,7 @@ class AudioStreamer:
                     message_audio.text += tts_content_item.raw_text
 
                 # Do orpheus inference. Blocks
-                audio_data = self.orpheus_gen.audio_chunk_generator(
-                    request_config=self.orpheus_completions_config, tts_content_item = tts_content_item)
+                audio_data = self.orpheus_gen.audio_chunk_generator(tts_content_item = tts_content_item)
 
                 # Feed the audio queue. Blocks.
                 self.queue_feeder(audio_data, self.stop_event, message_audio) 

@@ -10,6 +10,7 @@ from l import L # type: ignore
 from completions_config import CompletionsConfig
 from completions_manager import CompletionsManager
 from main_control_parser import MainControlParser
+from orpheus_constants import OrpheusConstants
 from prefs import Prefs
 from shared import Shared
 from text_segmenter import TextSegmenter
@@ -120,7 +121,7 @@ class App:
         command_value = parts[1].strip() if len(parts) > 1 else ""
 
         # Legacy voice syntax (command itself is a voice name)
-        if command in Constants.ORPHEUS_VOICES:
+        if command in OrpheusConstants.STOCK_VOICES:
             command_value = command
             command = "voice"
 
@@ -135,7 +136,7 @@ class App:
                         feedback = "Changed voice to: Random voice per generated audio segment"
                     else:
                         feedback = f"Changed voice to: \"{command_value}\""
-                        if not command_value in Constants.ORPHEUS_VOICES:
+                        if not command_value in OrpheusConstants.STOCK_VOICES:
                             feedback += " (Value is not one of the default Orpheus voices)"
           
             case "clear":
