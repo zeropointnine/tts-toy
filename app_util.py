@@ -33,6 +33,8 @@ class AppUtil:
     def ping_orpheus_server_with_feedback(orpheus_completions_config: CompletionsConfig, ui_queue: queue.Queue) -> None:
         from orpheus_gen import OrpheusGen
 
+        AppUtil.send_ui_message(ui_queue, LogUiMessage(f"Pinging Orpheus LLM server {orpheus_completions_config.url}"))
+
         error_message = OrpheusGen.ping(orpheus_completions_config)        
         if error_message:
             AppUtil.send_ui_message(ui_queue, LogUiMessage("[error]" + error_message))

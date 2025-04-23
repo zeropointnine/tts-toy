@@ -4,24 +4,26 @@ class Color:
 
     NAME_TO_COLOR = {
         "white": "#ffffff",
-        "light": "#cccccc",
+        "light": "#e3eaf2",
         "medium": "#777777",
         "dark": "#555555",
         "darkest": "#333333",
-        "bg": "#222222",
+        "bg": "#212327",
 
-        "blue": "#4488ff",
+        "blue": "#8da1b9",
         "blue_dark": "#005599",
-        "green": "#66aa66",
-        "green_dark": "#336633",
+        "green": "#91d076",
+        "green_dark": "#448844",
         "red": "#ff0000",
-        "orange": "#ff8800",
-        "purple": "#9370db",
+        "orange": "#e9ae7e",
+        "purple": "#b38ccd",
+        "magenta": "#f4adf4",
+        "yellow": "#e6d37a"
     }
 
-    # UI type 'color aliases'
+    # Merge UI type 'color aliases' into above dict
     _ui_type_to_color_name = {
-        "title": "white",
+        "title": "magenta",
         "assistant": "light",
         "log": "dark",        
         "input": "blue",
