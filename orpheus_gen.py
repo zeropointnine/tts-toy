@@ -409,7 +409,8 @@ class OrpheusGen:
                 url=request_config.url, 
                 headers=headers, 
                 json=json_data, 
-                stream=True
+                stream=True, 
+                timeout=5
             )
             if response.status_code != 200:
                 return f"Orpheus service request failed: {response.status_code} - {response.text}"

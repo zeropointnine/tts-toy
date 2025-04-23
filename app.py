@@ -70,8 +70,8 @@ class App:
             AppUtil.send_ui_message(self.ui_queue, LogUiMessage("[warning]" + warning_message))
 
         def go():
-            AppUtil.ping_orpheus_server_with_feedback(Prefs().orpheus_completions_config, self.ui_queue)
             AppUtil.import_decoder_with_feedback(self.ui_queue)
+            AppUtil.ping_orpheus_server_with_feedback(Prefs().orpheus_completions_config, self.ui_queue) 
         Util.run_in_thread(go, 0.5) # allows app to show UI before doing heavy load
 
     async def run(self):
@@ -309,14 +309,14 @@ class App:
             if elapsed < 0.1:
                 stat_line = "..."
             else:
-                multiplier = duration / (elapsed - ttfb)
                 elapsed_string = AppUtil.elapsed_string(elapsed)
                 ttfb_string = AppUtil.elapsed_string(ttfb)
                 duration_string = AppUtil.elapsed_string(duration)
-                if elapsed - ttfb < 0.33:
+                delta = elapsed - ttfb
+                if delta < 0.33:
                     multiplier_string = ""
                 else:
-                    multiplier_string = f"= {multiplier:.1f}x" 
+                    multiplier_string = f"= {(duration / delta):.1f}x" 
                 stat_line = f"Elapsed: {elapsed_string} TTFB: {ttfb_string} Length: {duration_string} {multiplier_string}"
 
             if is_finished:
