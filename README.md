@@ -68,7 +68,15 @@ If you're having trouble acheiving stutter-free audio, try offloading Orpheus LL
 
 Anecdotally, my dev system (Ryzen 7700 + 3080Ti) does the audio generation only about 1.5x faster than real-time, using Q8 model and running the LLM server on the same machine.
 
+# Known issues
+
+Inconsistently manifesting bug on Mac Terminal that corrupts display. If you are afflicted by this, please leave details under [Issues](https://github.com/zeropointnine/tts-toy/issues). 
+
 # Updates
+
+2025-04-23
+
+- Orpheus gen refactor; updated colors; buffer underflow recovery logic
 
 2025-04-21
 
