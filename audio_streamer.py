@@ -47,12 +47,15 @@ class AudioStreamer:
         # Audio buffer data queue, which gets fed to the sound device
         self.audio_buffer_queue = queue.Queue[np.ndarray](maxsize=MAX_AUDIO_QUEUE_SIZE)
 
+        # Queue to signal stream reset requests from the callback thread
+        self.reset_request_queue = queue.Queue(maxsize=1)
+
         self.last_buffer_message_time: float = 0
         self.last_buffer_message_value: float = 0
         self.last_queue_size: int = 0
 
-        # Initialize the stream (moved to its own method for potential reset)
-        self.init_sd_stream()
+        # Stream is initialized lazily now
+        # self.init_sd_stream() # Removed from here
 
         # Immediately start the worker thread
         thread = Thread(target=self.tts_queue_loop, daemon=True)
@@ -170,14 +173,23 @@ class AudioStreamer:
         Gets invoked (SAMPLERATE / BLOCKSIZE) times a second 
         """
 
+        # If stream hasn't been initialized or was closed, do nothing.
+        if not self.stream or self.stream.closed:
+            outdata.fill(0)
+            return
+
         Shared.sd_tick_num += 1
         self.last_queue_size = self.audio_buffer_queue.qsize()
 
         if status.output_underflow:
             L.w("Audio output underflow detected. Attempting to reset stream.")
-            AppUtil.send_ui_message(self.ui_queue, LogUiMessage("[warning]Audio buffer underflow, resetting stream."))
-            self.reset_sd_stream()
-            outdata.fill(0)
+            AppUtil.send_ui_message(self.ui_queue, LogUiMessage("[warning]Audio buffer underflow, requesting stream reset."))
+            # Signal the main loop to reset the stream, don't do it directly in the callback
+            try:
+                self.reset_request_queue.put_nowait(True)
+            except queue.Full:
+                L.w("Reset request already pending")
+            outdata.fill(0) # Fill current buffer with silence
             return
 
         try:
@@ -223,77 +235,84 @@ class AudioStreamer:
         """
         message_audio: MessageAudio | None = None
 
-        try:
-            while True:
+        while True:
 
-                # Check if the stream failed to initialize
-                if not self.stream:
-                    time.sleep(0.5) # Prevent busy-waiting if stream is down
-                    continue
-
-                if self.stop_event and self.stop_event.is_set():                    
-                    self.stop_event.clear() 
-                    time.sleep(0.1) 
-                    continue
-
-                # Wait for a tts item, and loop on a fast interval
-                try:
-                    tts_item = self.tts_queue.get(block=True, timeout=0.05)
-                    # L.d(f"TtsItem: {tts_item}")
-                except queue.Empty:
-                    continue
-
-                # Handle end-marker
-                if isinstance(tts_item, TtsEndItem):
-                    if message_audio:
-                        duration = message_audio.total_size / OrpheusConstants.SAMPLERATE
-                        if message_audio.keeps_data and message_audio.blocks:
-                            SaveWavUtil.save_with_ui_feedback(message_audio, False, self.ui_queue)
-                        else:
-                            s = f"Generation complete (audio length: {duration:.1f}s)"
-                            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(s))
-                        message_audio = None
-                    
-                    self.tts_queue.task_done()
-                    continue
-
-                tts_content_item = cast(TtsContentItem, tts_item)
-
-                if tts_content_item.is_message_start:
-                    if message_audio:
-                        L.w("MessageDataitem already exists, check logic")
-                    message_audio = MessageAudio(
-                        text=tts_content_item.raw_text, 
-                        voice_code=tts_content_item.voice,
-                        keeps_data=Prefs().save_audio_to_disk
-                    )
-                    
-                if message_audio and not tts_content_item.is_message_start:
-                    message_audio.text += tts_content_item.raw_text
-
-                if not tts_content_item.text:
-                    # TTS text has no content after having stripped bad characters, etc
-                    # Just schedule the display text, and continue loop
-                    L.d(f"Skipping empty tts text item. Originally: {tts_content_item.raw_text}")
-                    synced_text_item = SyncedTextItem(Shared.sd_tick_num, tts_content_item.raw_text)
-                    Shared.synced_text_queue.append(synced_text_item)
-                else:
-                    audio_gen = self.orpheus_gen.audio_chunk_generator(tts_content_item = tts_content_item)
-                    # Do the TTS inference for the text segment. Blocks:
-                    self.queue_feeder(audio_gen, self.stop_event, message_audio)
-
-                # Save if sound file item and stop event 
-                if self.stop_event.is_set() and message_audio and message_audio.keeps_data: 
-                    if message_audio.blocks:
-                        SaveWavUtil.save_with_ui_feedback(message_audio, True, self.ui_queue)
+            # Handle stop
+            if self.stop_event and self.stop_event.is_set():
+                self.stop_event.clear() 
+                if message_audio and message_audio.keeps_data and message_audio.blocks:
+                    L.i("Saving audio file on stop")
+                    SaveWavUtil.save_with_ui_feedback(message_audio, True, self.ui_queue)
                     message_audio = None
+                time.sleep(0.1) 
+                continue
 
+            # Check for reset request before waiting for TTS items
+            try:
+                reset_needed = self.reset_request_queue.get_nowait()
+                if reset_needed:
+                    L.i("Processing stream reset request")
+                    self.reset_sd_stream()
+                    continue
+            except queue.Empty:
+                pass 
+
+            # ---
+
+            # Wait for a tts item, and loop on a fast interval
+            try:
+                tts_item = self.tts_queue.get(block=True, timeout=0.05)
+                # L.d(f"TtsItem: {tts_item}")
+            except queue.Empty:
+                continue
+
+            # Handle end-marker
+            if isinstance(tts_item, TtsEndItem):
+                if message_audio:
+                    duration = message_audio.total_size / OrpheusConstants.SAMPLERATE
+                    if message_audio.keeps_data and message_audio.blocks:
+                        SaveWavUtil.save_with_ui_feedback(message_audio, False, self.ui_queue)
+                    else:
+                        s = f"Generation complete (audio length: {duration:.1f}s)"
+                        AppUtil.send_ui_message(self.ui_queue, LogUiMessage(s))
+                    message_audio = None
+                
                 self.tts_queue.task_done()
+                continue
 
-        except (sd.PortAudioError, Exception) as e:
-            s = f"Error with sounddevice. Please restart :/ {e}"
-            L.e(s)
-            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(f"[error]{s}"))
+            # We have a "content item"
+            tts_content_item = cast(TtsContentItem, tts_item)
+
+            # Init or update message_audio object
+            if tts_content_item.is_message_start:
+                if message_audio:
+                    L.w("MessageDataitem already exists, check logic")
+                message_audio = MessageAudio(
+                    text=tts_content_item.raw_text, 
+                    voice_code=tts_content_item.voice,
+                    keeps_data=Prefs().save_audio_to_disk
+                )
+            elif message_audio:
+                message_audio.text += tts_content_item.raw_text
+
+            # Handle empty text (because of stripped characters, etc)
+            if not tts_content_item.text:
+                # Just schedule the display text, and continue loop
+                L.d(f"Skipping empty tts text item. Originally: {tts_content_item.raw_text}")
+                synced_text_item = SyncedTextItem(Shared.sd_tick_num, tts_content_item.raw_text)
+                Shared.synced_text_queue.append(synced_text_item)
+                self.tts_queue.task_done()
+                continue
+
+            # Init stream on first real message
+            if not self.stream:
+                L.d("First TTS item received, initializing audio stream")
+                self.init_sd_stream()
+
+            # Finally, actually do the generation work
+            audio_gen = self.orpheus_gen.audio_chunk_generator(tts_content_item = tts_content_item)
+            self.queue_feeder(audio_gen, self.stop_event, message_audio)
+            self.tts_queue.task_done()
 
     def get_audio_queue_size(self) -> int:
         return self.audio_buffer_queue.qsize()
