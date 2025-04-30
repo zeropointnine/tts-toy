@@ -95,7 +95,7 @@ class OrpheusGen:
             audio_chunk_queue.task_done() 
         
         # Cleanup (optional)
-        token_gen_thread.join(timeout=5) 
+        token_gen_thread.join(timeout=10) 
         if token_gen_thread.is_alive():
             L.d("Thread did not finish cleanly?")
 

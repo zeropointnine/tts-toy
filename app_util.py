@@ -147,7 +147,7 @@ class AppUtil:
                 headers=headers, 
                 json=json_data, 
                 stream=True, 
-                timeout=5
+                timeout=10
             )
             if response.status_code != 200:
                 return f"Orpheus service request failed: {response.status_code} - {response.text}"

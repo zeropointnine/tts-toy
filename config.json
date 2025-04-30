@@ -19,10 +19,5 @@
             "temperature": 1.0
         }
     },
-    "prefs": {
-        "ix_mode": "chat",
-        "voice_code": "",
-        "save_audio_to_disk": false,
-        "audio_save_dir": ""
-    }
+    "audio_save_dir": "c:\\x\\"
 }

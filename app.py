@@ -11,6 +11,7 @@ from completions_config import CompletionsConfig
 from completions_manager import CompletionsManager
 from main_control_parser import MainControlParser
 from orpheus_constants import OrpheusConstants
+from config import Config
 from prefs import Prefs
 from shared import Shared
 from text_segmenter import TextSegmenter
@@ -35,16 +36,19 @@ class App:
         self.ui_queue = queue.Queue[UiMessage]()
         self.tts_queue = queue.Queue[TtsItem]()
         
-        fatal_error_message, warning_message = Prefs().init(self.ui_queue)
-        if fatal_error_message:
-            print("\n" + fatal_error_message)
+        error_message, warning_message = Config().init()
+        if error_message:
+            print("\n" + error_message)
             exit(1)                  
+
+        has_chat_completions_config = bool(Config().chat_completions_config)
+        Prefs().init(self.ui_queue, has_chat_completions_config)
 
         self.audio_streamer = AudioStreamer(
             stop_event=self.stop_audio_event, 
             tts_queue=self.tts_queue,
             ui_queue=self.ui_queue,
-            completions_config=Prefs().orpheus_completions_config
+            completions_config=Config().orpheus_completions_config
         ) 
 
         with open(Constants.SYSTEM_PROMPT_FILE_PATH, 'r') as f:
@@ -53,7 +57,7 @@ class App:
             raise Exception("System prompt is empty")
 
         self.llm_streamer_manager = CompletionsManager(
-            config=cast(CompletionsConfig, Prefs().chat_completions_config), 
+            config=cast(CompletionsConfig, Config().chat_completions_config), 
             system_prompt=system_prompt, 
             tts_queue=self.tts_queue,
             ui_queue=self.ui_queue
@@ -68,11 +72,12 @@ class App:
         self.print_stroke_flag: bool = True
 
         if warning_message:
-            AppUtil.send_ui_message(self.ui_queue, LogUiMessage("[warning]" + warning_message))
+            warning_message = "[warning]" + warning_message
+            AppUtil.send_ui_message(self.ui_queue, LogUiMessage(warning_message))
 
         def go():
             AppUtil.import_decoder_with_feedback(self.ui_queue)
-            AppUtil.ping_tts_server_with_feedback(Prefs().orpheus_completions_config, self.ui_queue) 
+            AppUtil.ping_tts_server_with_feedback(Config().orpheus_completions_config, self.ui_queue) 
         Util.run_in_thread(go, 0.5) # allows app to show UI before doing heavy load
 
     async def run(self):
@@ -167,11 +172,11 @@ class App:
 
             case value if value in ["chat", "c"]:
                 if Prefs().ix_mode != "chat":
-                    if not Prefs().chat_completions_config:
-                        feedback = f"Can't. Chat mode is disabled (Edit \"{Constants.CONFIG_JSON_FILE_PATH}\")."
+                    if not Config().chat_completions_config:
+                        feedback = f"Can't. Chat mode is disabled (Edit \"{Constants.CONFIG_FILE_NAME}\")."
                     else:
                         Prefs().ix_mode = "chat"
-                        feedback = f"Switched to \"chat mode\" ({Prefs().chat_completions_config.url})" # type: ignore
+                        feedback = f"Switched to \"chat mode\" [feedback_dark+i]{Config().chat_completions_config.url}" # type: ignore
                         self.print_stroke_flag = True
                 else:
                     feedback = "Already in chat mode"
@@ -182,17 +187,21 @@ class App:
                     feedback = "\"Save audio output to disk\" set to: off"
                 else:
                     try:
-                        os.makedirs(Prefs().audio_save_dir, exist_ok=True)
+                        os.makedirs(Config().audio_save_dir, exist_ok=True)
                         feedback = "\"Save audio output to disk\" set to: on"
-                        feedback += f"\n[feedback_dark+i]{Prefs().audio_save_dir}"
+                        feedback += f"\n[feedback_dark+i]{Config().audio_save_dir}"
                         Prefs().save_audio_to_disk = True
                     except Exception as e:
-                        feedback = f"Problem with output directory {Prefs().audio_save_dir}: {e}"
+                        feedback = f"Problem with output directory {Config().audio_save_dir}: {e}"
+
+            case value if value in ["redraw", "r"]:
+                self.ui.application.renderer.clear()
+                self.ui.application.invalidate()
 
             case value if value in ["help", "h", "menu"]:
                 should_print_menu = True
 
-            case value if value in ["q", "quit"]:
+            case value if value in ["quit", "q"]:
                 self.ui.application.exit()
 
             case _:
@@ -219,9 +228,9 @@ class App:
         """
         Starts an LLM streaming request, leading to audio output
         """
-        if not Prefs().chat_completions_config:
+        if not Config().chat_completions_config:
             AppUtil.send_ui_message(self.ui_queue, 
-                LogUiMessage(f"[error]Chat config missing! Edit \"{Constants.CONFIG_JSON_FILE_PATH}\" and fix."))
+                LogUiMessage(f"[error]Chat config missing! Edit \"{Constants.CONFIG_FILE_NAME}\" and fix."))
             return
 
         await self.stop_all()
@@ -286,9 +295,9 @@ class App:
         s = s.replace("%save", f"(currently: {"on" if Prefs().save_audio_to_disk else "off"})")
 
         if Prefs().ix_mode == "chat":
-            assert(Prefs().chat_completions_config)
+            assert(Config().chat_completions_config)
             s += f"[feedback+i]You are in \"chat mode.\" The LLM will talk to you."
-            s += f"\n[feedback_dark]{Prefs().chat_completions_config.url}" # type: ignore
+            s += f"\n[feedback_dark]{Config().chat_completions_config.url}" # type: ignore
         else:
             s += f"[feedback+i]You are in \"direct input mode.\"" 
             s += f"\n[feedback+i]Speech will be generated from your input."

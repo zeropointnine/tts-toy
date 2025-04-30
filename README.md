@@ -62,17 +62,25 @@ Lastly, the inner `request_dict` object can be populated with properties which w
 
 # Usage notes
 
+The chat LLM system prompt can be edited using `system_prompt.txt`
+
+# Performance notes
+
 Reminder here that Orpheus model inference + SNAC decoding is not a lightweight task. 
 
 If you're having trouble acheiving stutter-free audio, try offloading Orpheus LLM inference duties to another machine on the local network.
 
-Anecdotally, my dev system (Ryzen 7700 + 3080Ti) does the audio generation only about 1.5x faster than real-time, using Q8 model and running the LLM server on the same machine.
+Anecdotally, my dev system (Ryzen 7700 + 3080Ti) does the audio generation about 1.5x faster than real-time, using the Orpheus-3B Q8 model and running the LLM server on the same machine. On an M1 MacbookPro with the LLM server on a different machine.
 
 # Known issues
 
-Inconsistently manifesting bug on Mac Terminal that corrupts display. If you are afflicted by this, please leave details under [Issues](https://github.com/zeropointnine/tts-toy/issues). 
+There is a prompt-toolkit-related bug which manifests inconsistently on Mac Terminal that corrupts display. If you are afflicted by this, please leave details under [Issues](https://github.com/zeropointnine/tts-toy/issues). 
 
 # Updates
+
+2025-04-30
+
+- New command, "!redraw", redraws the display (useful if display is corrupted by unexpected console debug text, etc).
 
 2025-04-23
 

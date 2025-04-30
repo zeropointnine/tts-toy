@@ -35,7 +35,7 @@ class Ui:
 
         # self.input_buffer = Buffer()
         # self.input_control = BufferControl(buffer=self.input_buffer)
-        self.text_area = TextArea(multiline=True, wrap_lines=True, height=3)
+        self.text_area = TextArea(multiline=True, wrap_lines=True, height=3, style="class:input")
 
         root_container = HSplit([
             
@@ -112,4 +112,3 @@ class Ui:
         s += f"{seconds:.1f}s " if seconds > epsilon else "0s "
         self.audio_buffer_text = s if seconds > epsilon else [ (Color.as_pt_style("dark"), s) ]
         self.application.invalidate() # TODO unnecessarily costly? not sure; alternatives?
-

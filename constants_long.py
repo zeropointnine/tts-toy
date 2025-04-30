@@ -19,6 +19,7 @@ class ConstantsLong:
 
     [blue]!save[light] - save audio output to disk (toggle) %save
 
+    [blue]!redraw[light] - redraw the screen
     [blue]!help[light] - this help text"""
 
     # ------------------------------------------------------------------------------------

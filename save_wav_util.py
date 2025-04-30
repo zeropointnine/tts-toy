@@ -8,7 +8,7 @@ from app_types import LogUiMessage, MessageAudio, UiMessage
 from app_util import AppUtil
 from l import L
 from orpheus_constants import OrpheusConstants
-from prefs import Prefs
+from config import Config
 from text_massager import TextMassager
 from util import Util
 
@@ -51,7 +51,7 @@ class SaveWavUtil:
         fn = fn.rstrip(".")
         fn += ".wav"
 
-        file_path = os.path.join(Prefs().audio_save_dir, fn)        
+        file_path = os.path.join(Config().audio_save_dir, fn)        
         return file_path
 
     @staticmethod
